@@ -1,0 +1,66 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 头顶小天线 -->
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M53,22 L55,22 L55,30 L53,30 Z" />
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M54,18 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+
+    <!-- 圆角方形头身（桌宠主体） -->
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M34,34 L74,34 Q80,34 80,40 L80,68 Q80,74 74,74 L34,74 Q28,74 28,68 L28,40 Q28,34 34,34 Z" />
+
+    <!-- 头身内凹深色屏幕区 -->
+    <path
+        android:fillColor="#1A1A2E"
+        android:pathData="M34,38 L74,38 L74,68 Q74,70 72,70 L36,70 Q34,70 34,68 Z" />
+
+    <!-- 左眼白 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,46 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+    <!-- 左眼瞳孔（向内偏，萌） -->
+    <path
+        android:fillColor="#0F0F1A"
+        android:pathData="M46,47 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+    <!-- 左眼高光 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M47,45.5 m-0.8,0 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0" />
+
+    <!-- 右眼白 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M64,46 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+    <!-- 右眼瞳孔（向内偏，萌） -->
+    <path
+        android:fillColor="#0F0F1A"
+        android:pathData="M62,47 m-2.2,0 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0" />
+    <!-- 右眼高光 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M63,45.5 m-0.8,0 a0.8,0.8 0 1,0 1.6,0 a0.8,0.8 0 1,0 -1.6,0" />
+
+    <!-- 微笑嘴 -->
+    <path
+        android:fillColor="#F5A623"
+        android:pathData="M48,58 Q54,63 60,58 Q54,61 48,58 Z" />
+
+    <!-- 左腮红 -->
+    <path
+        android:fillColor="#FF8A65"
+        android:fillAlpha="0.7"
+        android:pathData="M38,57 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+    <!-- 右腮红 -->
+    <path
+        android:fillColor="#FF8A65"
+        android:fillAlpha="0.7"
+        android:pathData="M70,57 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0" />
+</vector>

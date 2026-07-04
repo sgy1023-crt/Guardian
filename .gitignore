@@ -1,0 +1,24 @@
+# Built files
+/build
+/app/build
+/.gradle
+/.kotlin
+
+# Local config (contains your local SDK path)
+local.properties
+
+# IDE
+/.idea
+*.iml
+.DS_Store
+Thumbs.db
+
+# Android Studio / IntelliJ capture
+captures/
+
+# Logs
+*.log
+
+# Private Claude Code working docs (not for GitHub)
+CLAUDE.md
+docs/
