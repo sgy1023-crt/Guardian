@@ -124,4 +124,4 @@ MIT — 见 [LICENSE](LICENSE)
 ## 致谢
 
 - 灵感来自 [one sec](https://one-sec.app/)。提醒语默认池里几条参考了正念冥想常见话术。
-- 本项目在 [LINUX DO](https://linux.do) 社区首发与交流，感谢佬友们的反馈。
+- 感谢 [LINUX DO](https://linux.do) 社区提供的交流氛围与知识分享，让我在学习和实践过程中受益良多。
