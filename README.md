@@ -18,7 +18,13 @@
 
 ## 截图
 
-> TODO：装机后补主页 / 弹窗 / 关键词管理 / 统计页截图
+| 停顿弹窗 · 触发实拍 | 提醒语 · 随机模式 | 提醒语 · 指定模式 |
+|:---:|:---:|:---:|
+| <img src="screenshots/overlay-popup.jpg" width="260"/> | <img src="screenshots/reminders-random.jpg" width="260"/> | <img src="screenshots/reminders-fixed.jpg" width="260"/> |
+
+| 关键词 · 加密遮罩 | 删除需验证密码 | 设置 |
+|:---:|:---:|:---:|
+| <img src="screenshots/keywords-encrypted.jpg" width="260"/> | <img src="screenshots/keyword-delete-password.jpg" width="260"/> | <img src="screenshots/settings.jpg" width="260"/> |
 
 ## 下载安装
 
