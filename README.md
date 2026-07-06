@@ -29,10 +29,12 @@
 ### 方式二：自己编译
 
 ```bash
-git clone <本仓库地址>
-cd 守卫APP
+git clone https://github.com/sgy1023-crt/Guardian.git
+cd Guardian
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
+# 小米被 INSTALL_FAILED_USER_RESTRICTED 拒绝时（USB 安装开关未开）：
+# adb push app/build/outputs/apk/debug/app-debug.apk /data/local/tmp/g.apk && adb shell pm install -r /data/local/tmp/g.apk
 ```
 
 要求：JDK 17、Android SDK（compileSdk 35、minSdk 26）、Android 8.0+ 真机。
@@ -115,4 +117,5 @@ MIT — 见 [LICENSE](LICENSE)
 
 ## 致谢
 
-灵感来自 [one sec](https://one-sec.app/)。提醒语默认池里几条参考了正念冥想常见话术。
+- 灵感来自 [one sec](https://one-sec.app/)。提醒语默认池里几条参考了正念冥想常见话术。
+- 本项目在 [LINUX DO](https://linux.do) 社区首发与交流，感谢佬友们的反馈。
