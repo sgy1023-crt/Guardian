@@ -6,10 +6,12 @@
 
 - **App 触发**：勾选要监督的应用（抖音、微博、B 站……），打开即弹窗
 - **关键词触发**：设置关键词（"游戏"、"无聊"、"再刷一会儿"……），屏幕出现即弹窗
-- **桌宠图标**：小琥珀机器人常驻 App 图标，扫描到关键词就弹出呼吸圆点提醒
+- **关键词加密模式**：列表遮罩显示，弹窗不显示原文，删除需 4~6 位数字密码——适合你想"忘掉"的关键词
 - **提醒语模式**：随机抽 / 指定固定一条，随意切换
-- **冷却时间**：同一 App 触发后 5~300 秒内不再重复弹（设置页可调）
-- **统计**：今日提醒次数、7 日趋势、Top App、连续清醒天数
+- **弹窗倒计时**：3~180 秒可调，倒计时结束才能点"我清醒了"
+- **冷却时间**：同一 App / 关键词触发后 5~300 秒内不再重复弹（设置页可调）
+- **扫描灵敏度**：屏幕文字扫描间隔 1~10 秒可调
+- **统计**：今日提醒次数、7 日趋势柱状图、Top App、连续清醒天数
 - **数据导出**：触发记录一键导出 JSON 分享
 - **保活**：前台服务 + WorkManager + 开机自启，进程被杀会自动拉起
 - **本地运行**：不联网不上传，所有数据只在本地
@@ -79,16 +81,18 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 引擎 1：前台 App 检测 → 悬浮窗弹窗
   MonitorService.kt · 1s 轮询 UsageStatsManager.queryEvents
-  命中 monitored_apps 表 → 弹呼吸圆点 + 5s 倒计时按钮
+  命中 monitored_apps 表 → 弹呼吸圆点 + 倒计时按钮（默认 5s，可调）
 
 引擎 2：屏幕文字扫描 → 悬浮窗弹窗
-  ClipboardWatcherService.kt · 1.5s 轮询 rootInActiveWindow
+  ClipboardWatcherService.kt · 按设置间隔（默认 1.5s）轮询 rootInActiveWindow
   递归遍历整棵节点树收集 text/contentDescription
   命中 keywords 表 → 弹同样悬浮窗
+  加密模式开启时：弹窗不显示关键词原文
 
 数据层：Room（MonitoredApp / Keyword / Reminder / TriggerLog）
 保活：ForegroundService + WorkManager + BootReceiver
 弹窗：WindowManager TYPE_APPLICATION_OVERLAY + ComposeView
+设置：SharedPreferences（MonitorPrefs），密码用 SHA-256 hash 存储
 ```
 
 ## 路线图
@@ -96,10 +100,12 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 - [x] App 触发提醒
 - [x] 关键词触发提醒（全屏扫描）
 - [x] 提醒语随机/指定模式
-- [x] 冷却可调
+- [x] 弹窗倒计时可调（3~180 秒）
+- [x] 关键词加密模式（遮罩 + 密码 + 弹窗不显示原文）
+- [x] 冷却可调（5~300 秒，App 和关键词共用）
+- [x] 扫描灵敏度可调（1~10 秒）
 - [x] 统计 + 数据导出
 - [x] 开机自启 + 进程被杀自动拉起
-- [ ] 桌宠形象常驻桌面（不只是图标）
 - [ ] 提醒语分类（工作时间用 A 池，睡前用 B 池）
 - [ ] 云同步（用户可选）
 

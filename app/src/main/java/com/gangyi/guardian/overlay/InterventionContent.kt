@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.ui.theme.GuardianAccent
 import com.gangyi.guardian.ui.theme.GuardianBg
 import com.gangyi.guardian.ui.theme.GuardianSurface
@@ -52,11 +53,11 @@ val DEFAULT_REMINDERS = listOf(
     "30 秒后再决定，急什么？"
 )
 
-private const val COUNTDOWN_SECONDS = 5
-
 @Composable
 fun InterventionContent(reminder: String, onDismiss: () -> Unit) {
-    var countdown by remember { mutableIntStateOf(COUNTDOWN_SECONDS) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val countdownTotal = remember { MonitorPrefs(context).overlayCountdownSeconds.coerceIn(1, 180) }
+    var countdown by remember { mutableIntStateOf(countdownTotal) }
 
     LaunchedEffect(Unit) {
         while (countdown > 0) {

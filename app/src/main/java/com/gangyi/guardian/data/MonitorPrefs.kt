@@ -23,6 +23,26 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_COOLDOWN, 30)
         set(value) = sp.edit().putInt(KEY_COOLDOWN, value).apply()
 
+    /** 屏幕文字扫描间隔秒数，默认 1.5 秒。越小越灵敏越费电 */
+    var screenScanIntervalSeconds: Float
+        get() = sp.getFloat(KEY_SCAN_INTERVAL, 1.5f)
+        set(value) = sp.edit().putFloat(KEY_SCAN_INTERVAL, value).apply()
+
+    /** 弹窗倒计时秒数，默认 5 秒。倒计时结束才能点"我清醒了" */
+    var overlayCountdownSeconds: Int
+        get() = sp.getInt(KEY_OVERLAY_COUNTDOWN, 5)
+        set(value) = sp.edit().putInt(KEY_OVERLAY_COUNTDOWN, value).apply()
+
+    /** 关键词加密模式开关 */
+    var keywordsEncrypted: Boolean
+        get() = sp.getBoolean(KEY_KW_ENCRYPTED, false)
+        set(value) = sp.edit().putBoolean(KEY_KW_ENCRYPTED, value).apply()
+
+    /** 关键词加密密码的 hash（SHA-256 hex）。空字符串表示未设密码 */
+    var keywordPasswordHash: String
+        get() = sp.getString(KEY_KW_PASSWORD_HASH, "") ?: ""
+        set(value) = sp.edit().putString(KEY_KW_PASSWORD_HASH, value).apply()
+
     /** 剪贴板关键词集合（任一子串命中即触发提醒） */
     var keywords: Set<String>
         get() = sp.getStringSet(KEY_KEYWORDS, emptySet()) ?: emptySet()
@@ -63,10 +83,14 @@ class MonitorPrefs(context: Context) {
         const val KEY_PACKAGES = "monitored_packages"
         const val KEY_ENABLED = "service_enabled"
         const val KEY_COOLDOWN = "cooldown_seconds"
+        const val KEY_SCAN_INTERVAL = "screen_scan_interval"
+        const val KEY_OVERLAY_COUNTDOWN = "overlay_countdown"
         const val KEY_KEYWORDS = "keywords"
         const val KEY_ONBOARDING = "onboarding_done"
         const val KEY_REMINDER_MODE = "reminder_mode"
         const val KEY_FIXED_REMINDER_ID = "fixed_reminder_id"
+        const val KEY_KW_ENCRYPTED = "kw_encrypted"
+        const val KEY_KW_PASSWORD_HASH = "kw_password_hash"
     }
 }
 

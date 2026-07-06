@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalContext
@@ -181,20 +182,25 @@ fun StatsScreen(onBack: () -> Unit) {
                 val bottomPad = 24f
                 val chartH = size.height - topPad - bottomPad
 
-                dailyCounts.forEachIndexed { i, (label, count) ->
+                dailyCounts.forEachIndexed { i, (_, count) ->
                     val barH = (count.toFloat() / maxCount) * chartH
                     val x = i * w + (w - barW) / 2
                     val y = size.height - bottomPad - barH
                     drawRect(GuardianAccent, Offset(x, y), Size(barW, barH))
                 }
             }
-            // day labels
+            // day labels — 跟柱子对齐：每个 label 占一列宽度，居中
             Row(
-                modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter),
-                horizontalArrangement = Arrangement.SpaceEvenly
+                modifier = Modifier.fillMaxWidth().align(Alignment.BottomCenter)
             ) {
                 dailyCounts.forEach { (label, _) ->
-                    Text(label, fontSize = 11.sp, color = GuardianTextDim, textAlign = TextAlign.Center, modifier = Modifier.width(36.dp))
+                    Text(
+                        label,
+                        fontSize = 11.sp,
+                        color = GuardianTextDim,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -212,22 +218,29 @@ fun StatsScreen(onBack: () -> Unit) {
                 Text("暂无数据", fontSize = 14.sp, color = GuardianTextDim)
             }
         } else {
-            topApps.forEachIndexed { i, app ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(GuardianSurface, RoundedCornerShape(if (i == topApps.lastIndex) 16.dp else 0.dp))
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("${i + 1}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = GuardianAccent)
-                    Spacer(Modifier.width(12.dp))
-                    Text(appLabels[app.packageName] ?: app.packageName,
-                        fontSize = 14.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${app.count} 次", fontSize = 13.sp, color = GuardianTextDim)
-                }
-                if (i < topApps.lastIndex) {
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(GuardianBg))
+            // 整体一个圆角容器，每行平铺，行间细分隔线
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(GuardianSurface)
+            ) {
+                topApps.forEachIndexed { i, app ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${i + 1}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = GuardianAccent)
+                        Spacer(Modifier.width(12.dp))
+                        Text(appLabels[app.packageName] ?: app.packageName,
+                            fontSize = 14.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                        Text("${app.count} 次", fontSize = 13.sp, color = GuardianTextDim)
+                    }
+                    if (i < topApps.lastIndex) {
+                        Box(Modifier.fillMaxWidth().height(1.dp).background(GuardianBg))
+                    }
                 }
             }
         }

@@ -43,7 +43,9 @@ class ClipboardWatcherService : AccessibilityService() {
     private val pollRunnable = object : Runnable {
         override fun run() {
             checkScreenText()
-            mainHandler.postDelayed(this, POLL_MS)
+            val intervalMs = (prefs.screenScanIntervalSeconds * 1000L).toLong()
+                .coerceIn(500L, 30_000L)
+            mainHandler.postDelayed(this, intervalMs)
         }
     }
 
@@ -140,12 +142,14 @@ class ClipboardWatcherService : AccessibilityService() {
             ?: return
 
         val now = System.currentTimeMillis()
-        if (now - lastTriggerAt < DEBOUNCE_MS) return
+        val cooldownMs = prefs.cooldownSeconds * 1000L
+        if (now - lastTriggerAt < cooldownMs) return
         lastTriggerAt = now
 
         val base = pickReminder()
+        val message = if (prefs.keywordsEncrypted) base else "（含关键词「$hit」）\n$base"
         withContextMain {
-            if (!overlay.isShowing) overlay.show("（含关键词「$hit」）\n$base")
+            if (!overlay.isShowing) overlay.show(message)
         }
         repo.logTrigger(pkg, TriggerLog.TYPE_CLIPBOARD, hit)
         Log.d(TAG, "TRIGGER hit='$hit' pkg=$pkg screenLen=${text.length}")
@@ -169,7 +173,6 @@ class ClipboardWatcherService : AccessibilityService() {
     }
 
     private companion object {
-        const val POLL_MS = 1500L
         const val DEBOUNCE_MS = 3000L
         const val MAX_DEPTH = 30
         const val MAX_CHILDREN_PER_NODE = 30

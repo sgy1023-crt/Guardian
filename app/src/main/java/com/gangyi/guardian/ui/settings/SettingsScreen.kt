@@ -16,13 +16,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -35,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -52,6 +58,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
@@ -61,7 +68,13 @@ fun SettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var cooldown by remember { mutableFloatStateOf(prefs.cooldownSeconds.toFloat()) }
+    var scanInterval by remember { mutableFloatStateOf(prefs.screenScanIntervalSeconds) }
+    var overlayCountdown by remember { mutableFloatStateOf(prefs.overlayCountdownSeconds.toFloat()) }
     var exporting by remember { mutableStateOf(false) }
+    var encrypted by remember { mutableStateOf(prefs.keywordsEncrypted) }
+    var showSetPwd by remember { mutableStateOf(false) }
+    var pwd1 by remember { mutableStateOf("") }
+    var pwd2 by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -95,7 +108,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("同一 App 冷却时间", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                    Text("同一 App / 关键词触发后冷却", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
                     Text("${cooldown.toInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
                 }
                 Slider(
@@ -110,6 +123,141 @@ fun SettingsScreen(onBack: () -> Unit) {
                         inactiveTrackColor = GuardianBg
                     )
                 )
+                Text(
+                    "弹窗关闭后这段时间内，同一关键词不再触发（避免反复弹）",
+                    fontSize = 12.sp, color = GuardianTextFaint
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // 屏幕扫描间隔
+        Text("屏幕扫描灵敏度", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("扫描间隔", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                    Text(String.format("%.1f 秒", scanInterval), fontSize = 14.sp, color = GuardianAccent)
+                }
+                Slider(
+                    value = scanInterval,
+                    onValueChange = { scanInterval = it },
+                    onValueChangeFinished = { prefs.screenScanIntervalSeconds = scanInterval },
+                    valueRange = 1f..10f,
+                    steps = 17,
+                    colors = SliderDefaults.colors(
+                        thumbColor = GuardianAccent,
+                        activeTrackColor = GuardianAccent,
+                        inactiveTrackColor = GuardianBg
+                    )
+                )
+                Text(
+                    "越小越灵敏越费电；1.5 秒够用，慢机器可调到 3~5 秒",
+                    fontSize = 12.sp, color = GuardianTextFaint
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // 弹窗倒计时
+        Text("弹窗倒计时", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("倒计时秒数", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                    Text("${overlayCountdown.toInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
+                }
+                Slider(
+                    value = overlayCountdown,
+                    onValueChange = { overlayCountdown = it },
+                    onValueChangeFinished = { prefs.overlayCountdownSeconds = overlayCountdown.toInt() },
+                    valueRange = 3f..180f,
+                    steps = 176,
+                    colors = SliderDefaults.colors(
+                        thumbColor = GuardianAccent,
+                        activeTrackColor = GuardianAccent,
+                        inactiveTrackColor = GuardianBg
+                    )
+                )
+                Text(
+                    "弹窗出现后必须冷静这么多秒才能点关闭，默认 5 秒，最高 3 分钟",
+                    fontSize = 12.sp, color = GuardianTextFaint
+                )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // 关键词加密
+        Text("隐私", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("关键词加密模式", fontSize = 15.sp, color = GuardianText)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "开启后关键词列表遮罩显示，弹窗不显示原文，删除需密码",
+                            fontSize = 12.sp, color = GuardianTextFaint
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = encrypted,
+                        onCheckedChange = { want ->
+                            if (want) {
+                                // 开启加密：必须先设密码
+                                pwd1 = ""; pwd2 = ""
+                                showSetPwd = true
+                            } else {
+                                encrypted = false
+                                prefs.keywordsEncrypted = false
+                            }
+                        },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = GuardianAccent,
+                            checkedTrackColor = GuardianAccent
+                        )
+                    )
+                }
+                if (encrypted) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(GuardianBg)
+                            .clickable {
+                                pwd1 = ""; pwd2 = ""
+                                showSetPwd = true
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("修改密码", fontSize = 13.sp, color = GuardianAccent)
+                    }
+                }
             }
         }
 
@@ -174,6 +322,67 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
     }
+
+    if (showSetPwd) {
+        var pwdError by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showSetPwd = false; pwd1 = ""; pwd2 = "" },
+            title = { Text(if (prefs.keywordPasswordHash.isEmpty()) "设置关键词密码" else "修改关键词密码") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = pwd1, onValueChange = { pwd1 = it; pwdError = "" },
+                        placeholder = { Text("4~6 位数字") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        isError = pwdError.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = pwd2, onValueChange = { pwd2 = it; pwdError = "" },
+                        placeholder = { Text("再输一次") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        isError = pwdError.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (pwdError.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(pwdError, fontSize = 12.sp, color = GuardianAccent)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    when {
+                        pwd1.length < 4 || pwd1.length > 6 -> pwdError = "密码长度 4~6 位"
+                        pwd1 != pwd2 -> pwdError = "两次输入不一致"
+                        !pwd1.all { it.isDigit() } -> pwdError = "只能数字"
+                        else -> {
+                            prefs.keywordPasswordHash = sha256(pwd1)
+                            prefs.keywordsEncrypted = true
+                            encrypted = true
+                            showSetPwd = false
+                            pwd1 = ""; pwd2 = ""
+                            Toast.makeText(context, "密码已设置", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSetPwd = false; pwd1 = ""; pwd2 = "" }) { Text("取消") }
+            }
+        )
+    }
+}
+
+private fun sha256(s: String): String {
+    val md = MessageDigest.getInstance("SHA-256")
+    val bytes = md.digest(s.toByteArray(Charsets.UTF_8))
+    return bytes.joinToString("") { "%02x".format(it) }
 }
 
 private suspend fun exportLogs(context: android.content.Context, repo: GuardianRepository): android.net.Uri {
