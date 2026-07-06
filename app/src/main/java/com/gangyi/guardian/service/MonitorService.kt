@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.gangyi.guardian.MainActivity
 import com.gangyi.guardian.R
@@ -22,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -38,13 +40,22 @@ class MonitorService : Service() {
     private lateinit var prefs: MonitorPrefs
     private lateinit var repo: GuardianRepository
     private lateinit var overlay: OverlayController
+    private lateinit var powerManager: PowerManager
+
+    // Flow 常驻缓存，避免轮询线程每秒查一次数据库
+    @Volatile
+    private var monitoredPkgs: Set<String> = emptySet()
 
     override fun onCreate() {
         super.onCreate()
         prefs = MonitorPrefs(this)
         repo = GuardianRepository(this)
-        overlay = OverlayController(this)
+        overlay = OverlayController.get(this)
+        powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         startForeground(NOTIF_ID, buildNotification())
+        scope.launch {
+            repo.monitoredPackages.collect { monitoredPkgs = it.toSet() }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -59,9 +70,19 @@ class MonitorService : Service() {
             // 这样冷却完全基于时间，离开/回来都不会丢冷却进度。
             val lastTriggerAtByPkg = HashMap<String, Long>()
             while (isActive) {
+                // 息屏：不查询不弹窗，收起已有弹窗，降频省电
+                if (!powerManager.isInteractive) {
+                    if (overlay.isShowing) {
+                        withContext(Dispatchers.Main) {
+                            overlay.dismiss(OverlayController.SOURCE_APP)
+                        }
+                    }
+                    delay(SCREEN_OFF_POLL_MS)
+                    continue
+                }
+
                 val pkg = ForegroundAppDetector.getForegroundPackage(this@MonitorService)
-                val monitored = repo.listMonitoredPackagesSync()
-                val hit = pkg != null && pkg in monitored && pkg != packageName
+                val hit = pkg != null && pkg in monitoredPkgs && pkg != packageName
 
                 if (hit) {
                     val now = System.currentTimeMillis()
@@ -71,13 +92,17 @@ class MonitorService : Service() {
                     if (freshTrigger && !overlay.isShowing) {
                         lastTriggerAtByPkg[pkg!!] = now
                         val reminder = pickReminder()
-                        withContext(Dispatchers.Main) { overlay.show(reminder) }
+                        withContext(Dispatchers.Main) {
+                            overlay.show(reminder, OverlayController.SOURCE_APP)
+                        }
                         launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
                     }
                 } else {
-                    // 离开被监控 App：收起弹窗。冷却时间不重置，避免反复进出绕过冷却。
+                    // 离开被监控 App：收起自己弹的窗（不动关键词弹窗）。冷却时间不重置。
                     if (overlay.isShowing) {
-                        withContext(Dispatchers.Main) { overlay.dismiss() }
+                        withContext(Dispatchers.Main) {
+                            overlay.dismiss(OverlayController.SOURCE_APP)
+                        }
                     }
                 }
                 delay(POLL_INTERVAL_MS)
@@ -87,7 +112,8 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         loopJob?.cancel()
-        overlay.dismiss()
+        overlay.dismiss(OverlayController.SOURCE_APP)
+        scope.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
@@ -137,6 +163,7 @@ class MonitorService : Service() {
         private const val NOTIF_ID = 1001
         private const val CHANNEL_ID = "guardian_monitor"
         private const val POLL_INTERVAL_MS = 1000L
+        private const val SCREEN_OFF_POLL_MS = 5000L
 
         fun start(context: Context) {
             val intent = Intent(context, MonitorService::class.java)

@@ -213,7 +213,7 @@ fun HomeScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 Text("关键词管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GuardianText)
-                Text("复制含关键词内容时弹出提醒", fontSize = 13.sp, color = GuardianTextDim)
+                Text("屏幕出现关键词时弹出提醒", fontSize = 13.sp, color = GuardianTextDim)
             }
             Text("→", fontSize = 20.sp, color = GuardianAccent)
         }
@@ -232,7 +232,7 @@ fun HomeScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 Text("提醒语管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GuardianText)
-                Text("弹窗时随机抽取一条提醒语", fontSize = 13.sp, color = GuardianTextDim)
+                Text("弹窗提醒语：随机抽取或固定一条", fontSize = 13.sp, color = GuardianTextDim)
             }
             Text("→", fontSize = 20.sp, color = GuardianAccent)
         }

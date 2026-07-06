@@ -134,7 +134,8 @@ fun RemindersScreen(onBack: () -> Unit) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(GuardianSurface)
-                            .clickable { applyFixedId(r.id); applyMode(MODE_FIXED) }
+                            // 只有"指定"模式下点条目才有意义，随机模式下点击不做事，避免莫名切换模式
+                            .clickable(enabled = mode == MODE_FIXED) { applyFixedId(r.id) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {

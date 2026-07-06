@@ -1,7 +1,10 @@
 package com.gangyi.guardian
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestNotificationPermissionIfNeeded()
         setContent {
             GuardianTheme {
                 Surface(
@@ -46,6 +50,11 @@ class MainActivity : ComponentActivity() {
                         if (needsGuide) "guide" else "home"
                     }
                     var screen by rememberSaveable { mutableStateOf(initialScreen) }
+
+                    // 子页面按系统返回 = 回主页，而不是退出 App
+                    BackHandler(enabled = screen != "home" && screen != "guide") {
+                        screen = "home"
+                    }
 
                     when (screen) {
                         "guide" -> PermissionGuideScreen(
@@ -88,6 +97,16 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    /** Android 13+ 通知权限不申请的话，"守卫运行中"常驻通知不会显示，服务也更容易被杀。 */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 100)
         }
     }
 }

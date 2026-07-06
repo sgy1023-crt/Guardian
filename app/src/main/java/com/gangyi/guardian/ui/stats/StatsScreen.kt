@@ -63,30 +63,31 @@ fun StatsScreen(onBack: () -> Unit) {
     var todayCount by remember { mutableIntStateOf(0) }
     var dailyCounts by remember { mutableStateOf(listOf<Pair<String, Int>>()) }
     var topApps by remember { mutableStateOf(listOf<AppCount>()) }
+    var appLabels by remember { mutableStateOf(mapOf<String, String>()) }
     var streak by remember { mutableIntStateOf(0) }
     var loaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            val now = System.currentTimeMillis()
             val cal = java.util.Calendar.getInstance()
             cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
             cal.set(java.util.Calendar.MINUTE, 0)
             cal.set(java.util.Calendar.SECOND, 0)
             cal.set(java.util.Calendar.MILLISECOND, 0)
             val todayStart = cal.timeInMillis
-            val sevenDaysAgo = todayStart - 7 * TimeUnit.DAYS.toMillis(1)
+            // 7 日窗口 = 6 天前 ~ 今天（含今天），正好 7 个桶
+            val chartStart = todayStart - 6 * TimeUnit.DAYS.toMillis(1)
 
-            val logs = repo.listLogsSince(sevenDaysAgo)
+            val logs = repo.listLogsSince(chartStart)
 
             // today count
             todayCount = logs.count { it.timestamp >= todayStart }
 
-            // daily counts for last 7 days
+            // daily counts for last 7 days (incl. today)
             val fmt = SimpleDateFormat("E", Locale.CHINESE)
             val counts = mutableMapOf<Long, Int>()
             for (i in 0 until 7) {
-                counts[sevenDaysAgo + i * TimeUnit.DAYS.toMillis(1)] = 0
+                counts[chartStart + i * TimeUnit.DAYS.toMillis(1)] = 0
             }
             logs.forEach { log ->
                 cal.timeInMillis = log.timestamp
@@ -95,17 +96,23 @@ fun StatsScreen(onBack: () -> Unit) {
                 cal.set(java.util.Calendar.SECOND, 0)
                 cal.set(java.util.Calendar.MILLISECOND, 0)
                 val dayStart = cal.timeInMillis
-                counts[dayStart] = (counts[dayStart] ?: 0) + 1
+                if (dayStart in counts) counts[dayStart] = counts[dayStart]!! + 1
             }
             dailyCounts = counts.entries.sortedBy { it.key }.map { (ms, c) ->
                 Pair(fmt.format(Date(ms)), c)
             }
 
             // top apps
-            topApps = repo.observeTopApps(sevenDaysAgo, 5).first()
+            topApps = repo.observeTopApps(chartStart, 5).first()
+
+            // App 标签映射也在 IO 线程算好，别卡主线程
+            val apps = InstalledApps.load(context)
+            appLabels = topApps.associate { top ->
+                top.packageName to (apps.find { it.packageName == top.packageName }?.label ?: top.packageName)
+            }
 
             // streak
-            streak = computeStreak(repo)
+            streak = computeStreak(repo, todayStart)
         }
         loaded = true
     }
@@ -118,10 +125,6 @@ fun StatsScreen(onBack: () -> Unit) {
     }
 
     val scrollState = rememberScrollState()
-    val appLabels = remember(topApps) {
-        val apps = InstalledApps.load(context)
-        topApps.associate { it.packageName to (apps.find { a -> a.packageName == it.packageName }?.label ?: it.packageName) }
-    }
 
     Column(
         modifier = Modifier
@@ -263,24 +266,18 @@ fun StatsScreen(onBack: () -> Unit) {
     }
 }
 
-private suspend fun computeStreak(repo: GuardianRepository): Int {
-    val firstTs = repo.firstTimestamp() ?: return 0
-    val logs = repo.listLogsSince(firstTs)
-    val daysWithTrigger = mutableSetOf<String>()
-    val fmt = SimpleDateFormat("yyyyMMdd", Locale.US)
+/**
+ * 连续清醒 = 从今天往回数，连续多少天完全没有触发记录（零触发才算清醒）。
+ * 最后一次触发发生在今天 → 0；从未有过记录 → 0（没有历史可言）。
+ */
+private suspend fun computeStreak(repo: GuardianRepository, todayStart: Long): Int {
+    val lastTs = repo.lastTimestamp() ?: return 0
     val cal = java.util.Calendar.getInstance()
-    logs.forEach { log ->
-        cal.timeInMillis = log.timestamp
-        daysWithTrigger.add(fmt.format(cal.time))
-    }
-    var streak = 0
-    cal.timeInMillis = System.currentTimeMillis()
-    while (true) {
-        cal.add(java.util.Calendar.DAY_OF_YEAR, -streak)
-        val day = fmt.format(cal.time)
-        if (day !in daysWithTrigger) break
-        streak++
-        cal.timeInMillis = System.currentTimeMillis()
-    }
-    return streak
+    cal.timeInMillis = lastTs
+    cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+    cal.set(java.util.Calendar.MINUTE, 0)
+    cal.set(java.util.Calendar.SECOND, 0)
+    cal.set(java.util.Calendar.MILLISECOND, 0)
+    val lastDayStart = cal.timeInMillis
+    return ((todayStart - lastDayStart) / TimeUnit.DAYS.toMillis(1)).toInt().coerceAtLeast(0)
 }

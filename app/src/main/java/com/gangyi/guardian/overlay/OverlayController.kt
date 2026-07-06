@@ -14,22 +14,27 @@ import com.gangyi.guardian.ui.theme.GuardianTheme
  * 负责把停顿弹窗作为系统级悬浮窗挂到任意界面之上。
  * 全屏 MATCH_PARENT 拦截所有触摸，用户只能点"我清醒了"关闭。
  * 必须在主线程调用 show/dismiss。
+ *
+ * 进程内单例：两个监控引擎共用同一个控制器，同一时刻最多一个弹窗，
+ * 不会叠两层；show/dismiss 带来源标记，App 引擎自动收起时不会误伤关键词弹窗。
  */
-class OverlayController(private val context: Context) {
+class OverlayController private constructor(context: Context) {
 
+    private val appContext = context.applicationContext
     private val windowManager =
-        context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private var composeView: ComposeView? = null
     private var lifecycleOwner: OverlayLifecycleOwner? = null
+    private var currentSource: String? = null
 
     val isShowing: Boolean get() = composeView != null
 
-    fun show(reminder: String) {
+    fun show(reminder: String, source: String) {
         if (isShowing) return
 
         val owner = OverlayLifecycleOwner().apply { onCreate() }
-        val view = ComposeView(context).apply {
+        val view = ComposeView(appContext).apply {
             setViewTreeLifecycleOwner(owner)
             setViewTreeViewModelStoreOwner(owner)
             setViewTreeSavedStateRegistryOwner(owner)
@@ -37,7 +42,7 @@ class OverlayController(private val context: Context) {
                 GuardianTheme {
                     InterventionContent(
                         reminder = reminder,
-                        onDismiss = { dismiss() }
+                        onDismiss = { dismissCurrent() }
                     )
                 }
             }
@@ -56,17 +61,24 @@ class OverlayController(private val context: Context) {
             owner.onResume()
             composeView = view
             lifecycleOwner = owner
+            currentSource = source
         } catch (_: Exception) {
             runCatching { owner.onDestroy() }
         }
     }
 
-    fun dismiss() {
+    /** 只收起 source 自己弹的窗。 */
+    fun dismiss(source: String) {
+        if (currentSource == source) dismissCurrent()
+    }
+
+    fun dismissCurrent() {
         val view = composeView ?: return
         runCatching { windowManager.removeView(view) }
         lifecycleOwner?.onDestroy()
         composeView = null
         lifecycleOwner = null
+        currentSource = null
     }
 
     private fun overlayType(): Int =
@@ -76,4 +88,17 @@ class OverlayController(private val context: Context) {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
+
+    companion object {
+        const val SOURCE_APP = "APP"
+        const val SOURCE_KEYWORD = "KEYWORD"
+
+        @Volatile
+        private var instance: OverlayController? = null
+
+        fun get(context: Context): OverlayController =
+            instance ?: synchronized(this) {
+                instance ?: OverlayController(context).also { instance = it }
+            }
+    }
 }

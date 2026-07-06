@@ -188,7 +188,7 @@ fun KeywordsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(
                         value = pwdInput, onValueChange = { pwdInput = it; pwdError = false },
-                        placeholder = { Text("4 位数字密码") },
+                        placeholder = { Text("4~6 位数字") },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),

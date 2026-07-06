@@ -1,5 +1,6 @@
 package com.gangyi.guardian.permission
 
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
@@ -51,8 +52,9 @@ object Permissions {
 
     /** 无障碍权限（剪贴板监控所必需，因为 Android 10+ 限制了后台读剪贴板）。 */
     fun hasAccessibility(context: Context): Boolean {
-        val expected = ComponentName(context, ClipboardWatcherService::class.java)
-            .flattenToString()
+        val component = ComponentName(context, ClipboardWatcherService::class.java)
+        val expected = component.flattenToString()
+        val expectedShort = component.flattenToShortString()
 
         // 优先用启用列表字符串匹配（更可靠，覆盖所有 ROM）
         val enabledStr = Settings.Secure.getString(
@@ -63,19 +65,17 @@ object Permissions {
             val splitter = TextUtils.SimpleStringSplitter(':')
             splitter.setString(enabledStr)
             while (splitter.hasNext()) {
-                if (splitter.next().equals(expected, ignoreCase = true)) return true
+                val entry = splitter.next()
+                if (entry.equals(expected, ignoreCase = true) ||
+                    entry.equals(expectedShort, ignoreCase = true)
+                ) return true
             }
         }
 
-        // 兜底：AccessibilityManager 列表
+        // 兜底：查"已启用"的服务列表（不能查"已安装"，否则别的无障碍应用开着时会误报已授权）
         val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-        return am.installedAccessibilityServiceList.any {
-            it.id.equals(expected, ignoreCase = true) ||
-                it.resolveInfo?.serviceInfo?.let { si ->
-                    si.packageName == context.packageName &&
-                        si.name == ClipboardWatcherService::class.java.name
-                } == true
-        } && am.isEnabled
+        return am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { it.id.equals(expected, ignoreCase = true) }
     }
 
     fun accessibilityIntent(): Intent =

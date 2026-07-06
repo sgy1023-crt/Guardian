@@ -51,6 +51,8 @@ class ClipboardWatcherService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // 先移除再挂，防止系统重复回调时叠出双份轮询
+        mainHandler.removeCallbacks(pollRunnable)
         mainHandler.post(pollRunnable)
     }
 
@@ -61,13 +63,13 @@ class ClipboardWatcherService : AccessibilityService() {
         super.onCreate()
         repo = GuardianRepository(this)
         prefs = MonitorPrefs(this)
-        overlay = OverlayController(this)
+        overlay = OverlayController.get(this)
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(pollRunnable)
         logScope.cancel()
-        runCatching { overlay.dismiss() }
+        runCatching { overlay.dismiss(OverlayController.SOURCE_KEYWORD) }
         super.onDestroy()
     }
 
@@ -87,8 +89,7 @@ class ClipboardWatcherService : AccessibilityService() {
 
         try {
             val sb = StringBuilder(512)
-            val visited = IntArray(0)
-            collectTexts(root, 0, sb, visited)
+            collectTexts(root, 0, sb)
             val screenText = sb.toString()
             if (screenText.isBlank()) return
             dispatchText(screenText, rootPkg)
@@ -101,8 +102,7 @@ class ClipboardWatcherService : AccessibilityService() {
     private fun collectTexts(
         node: AccessibilityNodeInfo,
         depth: Int,
-        out: StringBuilder,
-        @Suppress("UNUSED_PARAMETER") visited: IntArray
+        out: StringBuilder
     ) {
         if (depth > MAX_DEPTH) return
         if (out.length > MAX_BUFFER) return
@@ -121,7 +121,7 @@ class ClipboardWatcherService : AccessibilityService() {
             if (out.length > MAX_BUFFER) return
             val child = node.getChild(i) ?: continue
             try {
-                collectTexts(child, depth + 1, out, visited)
+                collectTexts(child, depth + 1, out)
             } finally {
                 child.recycle()
             }
@@ -144,15 +144,22 @@ class ClipboardWatcherService : AccessibilityService() {
         val now = System.currentTimeMillis()
         val cooldownMs = prefs.cooldownSeconds * 1000L
         if (now - lastTriggerAt < cooldownMs) return
-        lastTriggerAt = now
 
         val base = pickReminder()
         val message = if (prefs.keywordsEncrypted) base else "（含关键词「$hit」）\n$base"
+        var shown = false
         withContextMain {
-            if (!overlay.isShowing) overlay.show(message)
+            if (!overlay.isShowing) {
+                overlay.show(message, OverlayController.SOURCE_KEYWORD)
+                shown = true
+            }
         }
-        repo.logTrigger(pkg, TriggerLog.TYPE_CLIPBOARD, hit)
-        Log.d(TAG, "TRIGGER hit='$hit' pkg=$pkg screenLen=${text.length}")
+        // 只有真弹出来才消耗冷却、才计入统计，弹窗被占用时不白扣
+        if (shown) {
+            lastTriggerAt = now
+            repo.logTrigger(pkg, TriggerLog.TYPE_CLIPBOARD, hit)
+            Log.d(TAG, "TRIGGER hit='$hit' pkg=$pkg screenLen=${text.length}")
+        }
     }
 
     /** 按当前模式取提醒语：固定模式取不到时回退到随机。 */
@@ -173,7 +180,6 @@ class ClipboardWatcherService : AccessibilityService() {
     }
 
     private companion object {
-        const val DEBOUNCE_MS = 3000L
         const val MAX_DEPTH = 30
         const val MAX_CHILDREN_PER_NODE = 30
         const val MAX_BUFFER = 20000

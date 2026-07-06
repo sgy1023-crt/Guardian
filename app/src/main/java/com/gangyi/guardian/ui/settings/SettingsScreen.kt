@@ -75,6 +75,9 @@ fun SettingsScreen(onBack: () -> Unit) {
     var showSetPwd by remember { mutableStateOf(false) }
     var pwd1 by remember { mutableStateOf("") }
     var pwd2 by remember { mutableStateOf("") }
+    var showVerifyPwd by remember { mutableStateOf(false) }
+    var verifyInput by remember { mutableStateOf("") }
+    var verifyError by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -231,9 +234,15 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 // 开启加密：必须先设密码
                                 pwd1 = ""; pwd2 = ""
                                 showSetPwd = true
-                            } else {
+                            } else if (prefs.keywordPasswordHash.isEmpty()) {
+                                // 从没设过密码（异常残留状态），直接关
                                 encrypted = false
                                 prefs.keywordsEncrypted = false
+                            } else {
+                                // 关闭加密同样要验密码，否则"防自己"形同虚设
+                                verifyInput = ""
+                                verifyError = false
+                                showVerifyPwd = true
                             }
                         },
                         colors = androidx.compose.material3.SwitchDefaults.colors(
@@ -323,6 +332,49 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
     }
 
+    if (showVerifyPwd) {
+        AlertDialog(
+            onDismissRequest = { showVerifyPwd = false; verifyInput = "" },
+            title = { Text("验证密码") },
+            text = {
+                Column {
+                    Text("关闭加密模式需要输入密码", fontSize = 13.sp, color = GuardianTextDim)
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = verifyInput,
+                        onValueChange = { verifyInput = it; verifyError = false },
+                        placeholder = { Text("4~6 位数字") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        isError = verifyError,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (verifyError) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("密码错误", fontSize = 12.sp, color = GuardianAccent)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (sha256(verifyInput.trim()) == prefs.keywordPasswordHash) {
+                        encrypted = false
+                        prefs.keywordsEncrypted = false
+                        showVerifyPwd = false
+                        verifyInput = ""
+                        Toast.makeText(context, "加密模式已关闭", Toast.LENGTH_SHORT).show()
+                    } else {
+                        verifyError = true
+                    }
+                }) { Text("确定") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVerifyPwd = false; verifyInput = "" }) { Text("取消") }
+            }
+        )
+    }
+
     if (showSetPwd) {
         var pwdError by remember { mutableStateOf("") }
         AlertDialog(
@@ -385,21 +437,22 @@ private fun sha256(s: String): String {
     return bytes.joinToString("") { "%02x".format(it) }
 }
 
-private suspend fun exportLogs(context: android.content.Context, repo: GuardianRepository): android.net.Uri {
-    val logs = withContext(Dispatchers.IO) { repo.allLogs() }
-    val arr = JSONArray()
-    val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-    logs.forEach { log ->
-        val obj = JSONObject()
-        obj.put("id", log.id)
-        obj.put("packageName", log.packageName ?: "")
-        obj.put("triggerType", log.triggerType)
-        obj.put("keyword", log.keyword ?: "")
-        obj.put("timestamp", fmt.format(java.util.Date(log.timestamp)))
-        obj.put("dismissedAt", log.dismissedAt?.let { fmt.format(java.util.Date(it)) } ?: "")
-        arr.put(obj)
+private suspend fun exportLogs(context: android.content.Context, repo: GuardianRepository): android.net.Uri =
+    withContext(Dispatchers.IO) {
+        val logs = repo.allLogs()
+        val arr = JSONArray()
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        logs.forEach { log ->
+            val obj = JSONObject()
+            obj.put("id", log.id)
+            obj.put("packageName", log.packageName ?: "")
+            obj.put("triggerType", log.triggerType)
+            obj.put("keyword", log.keyword ?: "")
+            obj.put("timestamp", fmt.format(java.util.Date(log.timestamp)))
+            obj.put("dismissedAt", log.dismissedAt?.let { fmt.format(java.util.Date(it)) } ?: "")
+            arr.put(obj)
+        }
+        val file = File(context.cacheDir, "guardian_export_${System.currentTimeMillis()}.json")
+        file.writeText(arr.toString(2))
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
     }
-    val file = File(context.cacheDir, "guardian_export_${System.currentTimeMillis()}.json")
-    file.writeText(arr.toString(2))
-    return FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-}
