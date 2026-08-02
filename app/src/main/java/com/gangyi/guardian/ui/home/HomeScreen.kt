@@ -13,6 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -36,8 +42,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
+import com.gangyi.guardian.guard.EscalationTracker
 import com.gangyi.guardian.permission.Permissions
 import com.gangyi.guardian.service.MonitorService
+import com.gangyi.guardian.ui.components.NavCard
+import com.gangyi.guardian.ui.components.PermissionRow
 import com.gangyi.guardian.ui.theme.GuardianAccent
 import com.gangyi.guardian.ui.theme.GuardianBg
 import com.gangyi.guardian.ui.theme.GuardianSuccess
@@ -154,6 +163,16 @@ fun HomeScreen(
                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         return@Switch
                     }
+                    // 封锁期内不许关守护——否则关掉开关就能绕过封锁，
+                    // 整个"防自我欺骗"就白做了。
+                    if (!on && EscalationTracker.anyActiveLock()) {
+                        Toast.makeText(
+                            context,
+                            "封锁期间无法关闭守护，等封锁结束再说",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@Switch
+                    }
                     serviceRunning = on
                     prefs.serviceEnabled = on
                     // 同步写 Prefs（供 BootReceiver/Worker 读）和 Room（供 MonitorService 读）
@@ -182,118 +201,49 @@ fun HomeScreen(
 
         Spacer(Modifier.height(32.dp))
 
-        // 选择 App 入口
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .clickable { onNavigateApps() }
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("监控列表", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GuardianText)
-                Text("已选 $monitoredCount 个应用", fontSize = 13.sp, color = GuardianTextDim)
-            }
-            Text("→", fontSize = 20.sp, color = GuardianAccent)
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // 关键词入口
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .clickable { onNavigateKeywords() }
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("关键词管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GuardianText)
-                Text("屏幕出现关键词时弹出提醒", fontSize = 13.sp, color = GuardianTextDim)
-            }
-            Text("→", fontSize = 20.sp, color = GuardianAccent)
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // 提醒语入口
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .clickable { onNavigateReminders() }
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("提醒语管理", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GuardianText)
-                Text("弹窗提醒语：随机抽取或固定一条", fontSize = 13.sp, color = GuardianTextDim)
-            }
-            Text("→", fontSize = 20.sp, color = GuardianAccent)
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // 统计入口
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .clickable { onNavigateStats() }
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("统计", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GuardianText)
-                Text("查看你的自律数据", fontSize = 13.sp, color = GuardianTextDim)
-            }
-            Text("→", fontSize = 20.sp, color = GuardianAccent)
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        // 设置入口
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .clickable { onNavigateSettings() }
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("设置", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = GuardianText)
-                Text("冷却时间、数据导出等", fontSize = 13.sp, color = GuardianTextDim)
-            }
-            Text("→", fontSize = 20.sp, color = GuardianAccent)
-        }
-    }
-}
-
-@Composable
-private fun PermissionRow(label: String, granted: Boolean, onRequest: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(GuardianSurface)
-            .clickable(enabled = !granted) { onRequest() }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-        Text(
-            if (granted) "✓ 已授权" else "去授权",
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (granted) GuardianSuccess else GuardianAccent
+        NavCard(
+            icon = Icons.Filled.Apps,
+            title = "监控列表",
+            subtitle = "已选 $monitoredCount 个应用",
+            onClick = onNavigateApps
         )
+
+        Spacer(Modifier.height(10.dp))
+
+        NavCard(
+            icon = Icons.Filled.Key,
+            title = "关键词管理",
+            subtitle = "屏幕出现关键词时弹出提醒",
+            onClick = onNavigateKeywords
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        NavCard(
+            icon = Icons.AutoMirrored.Filled.Message,
+            title = "提醒语管理",
+            subtitle = "弹窗提醒语：随机抽取或固定一条",
+            onClick = onNavigateReminders
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        NavCard(
+            icon = Icons.Filled.BarChart,
+            title = "统计",
+            subtitle = "查看你的自律数据",
+            onClick = onNavigateStats
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        NavCard(
+            icon = Icons.Filled.Settings,
+            title = "设置",
+            subtitle = "冷却、封锁强度、数据导出",
+            onClick = onNavigateSettings
+        )
+
+        Spacer(Modifier.height(32.dp))
     }
 }

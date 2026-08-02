@@ -13,6 +13,8 @@ private val GuardianColorScheme = darkColorScheme(
     onSurface = GuardianText,
     surfaceVariant = GuardianSurface2,
     onSurfaceVariant = GuardianTextDim,
+    error = GuardianDanger,
+    onError = GuardianText,
 )
 
 @Composable

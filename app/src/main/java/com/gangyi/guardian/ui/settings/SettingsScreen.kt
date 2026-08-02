@@ -46,8 +46,16 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
+import com.gangyi.guardian.permission.Permissions
+import com.gangyi.guardian.ui.components.GuardianCard
+import com.gangyi.guardian.ui.components.GuardianChip
+import com.gangyi.guardian.ui.components.GuardianSlider
+import com.gangyi.guardian.ui.components.GuardianTopBar
+import com.gangyi.guardian.ui.components.SectionLabel
 import com.gangyi.guardian.ui.theme.GuardianAccent
 import com.gangyi.guardian.ui.theme.GuardianBg
+import com.gangyi.guardian.ui.theme.GuardianDanger
+import com.gangyi.guardian.ui.theme.GuardianDangerSoft
 import com.gangyi.guardian.ui.theme.GuardianSurface
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
@@ -70,6 +78,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var cooldown by remember { mutableFloatStateOf(prefs.cooldownSeconds.toFloat()) }
     var scanInterval by remember { mutableFloatStateOf(prefs.screenScanIntervalSeconds) }
     var overlayCountdown by remember { mutableFloatStateOf(prefs.overlayCountdownSeconds.toFloat()) }
+    var alertVibrate by remember { mutableStateOf(prefs.alertVibrate) }
+    var alertSound by remember { mutableStateOf(prefs.alertSound) }
     var exporting by remember { mutableStateOf(false) }
     var encrypted by remember { mutableStateOf(prefs.keywordsEncrypted) }
     var showSetPwd by remember { mutableStateOf(false) }
@@ -79,6 +89,13 @@ fun SettingsScreen(onBack: () -> Unit) {
     var verifyInput by remember { mutableStateOf("") }
     var verifyError by remember { mutableStateOf(false) }
 
+    // 升级封锁
+    var escEnabled by remember { mutableStateOf(prefs.escalationEnabled) }
+    var escThreshold by remember { mutableFloatStateOf(prefs.escalationThreshold.toFloat()) }
+    var escWindow by remember { mutableFloatStateOf(prefs.escalationWindowMinutes.toFloat()) }
+    var lockMinutes by remember { mutableFloatStateOf(prefs.lockdownMinutes.toFloat()) }
+    val hasAccessibility = remember { Permissions.hasAccessibility(context) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -87,185 +104,240 @@ fun SettingsScreen(onBack: () -> Unit) {
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(24.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回",
-                tint = GuardianText, modifier = Modifier.size(28.dp).clickable { onBack() }
-            )
-            Spacer(Modifier.weight(1f))
-            Text("设置", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GuardianText)
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.size(28.dp))
-        }
+        GuardianTopBar("设置", onBack)
         Spacer(Modifier.height(28.dp))
 
         // 冷却时间
-        Text("提醒冷却", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("同一 App / 关键词触发后冷却", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${cooldown.toInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
-                }
-                Slider(
-                    value = cooldown,
-                    onValueChange = { cooldown = it },
-                    onValueChangeFinished = { prefs.cooldownSeconds = cooldown.toInt() },
-                    valueRange = 5f..300f,
-                    steps = 58,
-                    colors = SliderDefaults.colors(
-                        thumbColor = GuardianAccent,
-                        activeTrackColor = GuardianAccent,
-                        inactiveTrackColor = GuardianBg
-                    )
-                )
-                Text(
-                    "弹窗关闭后这段时间内，同一关键词不再触发（避免反复弹）",
-                    fontSize = 12.sp, color = GuardianTextFaint
-                )
-            }
-        }
+        SectionLabel("提醒冷却")
+        GuardianSlider(
+            label = "同一 App / 关键词触发后冷却",
+            valueText = "${cooldown.toInt()} 秒",
+            hint = "弹窗关闭后这段时间内，同一目标不再触发（避免反复弹）",
+            value = cooldown,
+            valueRange = 5f..300f,
+            onValueChange = { cooldown = it },
+            onValueChangeFinished = { prefs.cooldownSeconds = cooldown.toInt() }
+        )
 
         Spacer(Modifier.height(20.dp))
 
         // 屏幕扫描间隔
-        Text("屏幕扫描灵敏度", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+        SectionLabel("屏幕扫描灵敏度")
+        GuardianSlider(
+            label = "扫描间隔",
+            valueText = String.format("%.1f 秒", scanInterval),
+            hint = "越小越灵敏越费电；1.5 秒够用，慢机器可调到 3~5 秒",
+            value = scanInterval,
+            valueRange = 1f..10f,
+            onValueChange = { scanInterval = it },
+            onValueChangeFinished = { prefs.screenScanIntervalSeconds = scanInterval }
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        // 弹窗倒计时
+        SectionLabel("弹窗倒计时")
+        GuardianSlider(
+            label = "倒计时秒数",
+            valueText = "${overlayCountdown.toInt()} 秒",
+            hint = "弹窗出现后必须冷静这么多秒才能点关闭，默认 5 秒，最高 3 分钟",
+            value = overlayCountdown,
+            valueRange = 3f..180f,
+            onValueChange = { overlayCountdown = it },
+            onValueChangeFinished = { prefs.overlayCountdownSeconds = overlayCountdown.toInt() }
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        // 弹窗提醒方式：光靠看容易被无视，加一层身体上的信号
+        SectionLabel("提醒方式")
+        GuardianCard(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("扫描间隔", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text(String.format("%.1f 秒", scanInterval), fontSize = 14.sp, color = GuardianAccent)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("弹窗振动", fontSize = 15.sp, color = GuardianText)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "弹窗出现时短促振两下。旁人完全察觉不到，但身体会记住这个信号",
+                        fontSize = 12.sp, color = GuardianTextFaint
+                    )
                 }
-                Slider(
-                    value = scanInterval,
-                    onValueChange = { scanInterval = it },
-                    onValueChangeFinished = { prefs.screenScanIntervalSeconds = scanInterval },
-                    valueRange = 1f..10f,
-                    steps = 17,
-                    colors = SliderDefaults.colors(
-                        thumbColor = GuardianAccent,
-                        activeTrackColor = GuardianAccent,
-                        inactiveTrackColor = GuardianBg
+                androidx.compose.material3.Switch(
+                    checked = alertVibrate,
+                    onCheckedChange = {
+                        alertVibrate = it
+                        prefs.alertVibrate = it
+                    },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = GuardianAccent,
+                        checkedTrackColor = GuardianAccent
                     )
                 )
-                Text(
-                    "越小越灵敏越费电；1.5 秒够用，慢机器可调到 3~5 秒",
-                    fontSize = 12.sp, color = GuardianTextFaint
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("弹窗提示音", fontSize = 15.sp, color = GuardianText)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "手机静音时也会响（走闹钟通道），音量已压低。这是最难被忽略的一层提醒",
+                        fontSize = 12.sp, color = GuardianTextFaint
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = alertSound,
+                    onCheckedChange = {
+                        alertSound = it
+                        prefs.alertSound = it
+                    },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = GuardianAccent,
+                        checkedTrackColor = GuardianAccent
+                    )
                 )
             }
         }
 
         Spacer(Modifier.height(20.dp))
 
-        // 弹窗倒计时
-        Text("弹窗倒计时", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+        // 升级封锁：反复点掉弹窗时上硬手段
+        SectionLabel("升级封锁")
+        GuardianCard(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("倒计时秒数", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${overlayCountdown.toInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("反复触发时封锁", fontSize = 15.sp, color = GuardianText)
+                        Spacer(Modifier.size(8.dp))
+                        GuardianChip("硬手段", GuardianDanger, GuardianDangerSoft)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "短时间内被提醒多次，说明提醒已经没用了。此时把你送回桌面，" +
+                            "并暂时锁住那个应用——期间打开就再送出来，没有解锁入口。",
+                        fontSize = 12.sp, color = GuardianTextFaint
+                    )
                 }
-                Slider(
-                    value = overlayCountdown,
-                    onValueChange = { overlayCountdown = it },
-                    onValueChangeFinished = { prefs.overlayCountdownSeconds = overlayCountdown.toInt() },
-                    valueRange = 3f..180f,
-                    steps = 176,
-                    colors = SliderDefaults.colors(
-                        thumbColor = GuardianAccent,
-                        activeTrackColor = GuardianAccent,
-                        inactiveTrackColor = GuardianBg
+                androidx.compose.material3.Switch(
+                    checked = escEnabled,
+                    onCheckedChange = {
+                        escEnabled = it
+                        prefs.escalationEnabled = it
+                    },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = GuardianDanger,
+                        checkedTrackColor = GuardianDanger.copy(alpha = 0.5f)
                     )
                 )
-                Text(
-                    "弹窗出现后必须冷静这么多秒才能点关闭，默认 5 秒，最高 3 分钟",
-                    fontSize = 12.sp, color = GuardianTextFaint
-                )
             }
+            if (escEnabled && !hasAccessibility) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(GuardianDangerSoft)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "未开启无障碍权限，封锁只能弹窗强制冷静，无法把你送回桌面。" +
+                            "去主页开启无障碍可获得完整效果。",
+                        fontSize = 11.sp, color = GuardianDanger
+                    )
+                }
+            }
+        }
+
+        if (escEnabled) {
+            Spacer(Modifier.height(10.dp))
+            GuardianSlider(
+                label = "触发次数阈值",
+                valueText = "${escThreshold.toInt()} 次",
+                hint = "窗口内被提醒这么多次，就升级为封锁",
+                value = escThreshold,
+                valueRange = 2f..10f,
+                onValueChange = { escThreshold = it },
+                onValueChangeFinished = { prefs.escalationThreshold = escThreshold.toInt() }
+            )
+            Spacer(Modifier.height(10.dp))
+            GuardianSlider(
+                label = "统计窗口",
+                valueText = "${escWindow.toInt()} 分钟",
+                hint = "只看最近这段时间内的次数；真去干别的事，计数会自动清零",
+                value = escWindow,
+                valueRange = 5f..60f,
+                onValueChange = { escWindow = it },
+                onValueChangeFinished = { prefs.escalationWindowMinutes = escWindow.toInt() }
+            )
+            Spacer(Modifier.height(10.dp))
+            GuardianSlider(
+                label = "封锁时长",
+                valueText = "${lockMinutes.toInt()} 分钟",
+                hint = "基础时长。短时间内重复被封同一个应用，时长会翻倍（最多 4 倍）",
+                value = lockMinutes,
+                valueRange = 1f..30f,
+                onValueChange = { lockMinutes = it },
+                onValueChangeFinished = { prefs.lockdownMinutes = lockMinutes.toInt() }
+            )
         }
 
         Spacer(Modifier.height(20.dp))
 
         // 关键词加密
-        Text("隐私", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+        SectionLabel("隐私")
+        GuardianCard(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("关键词加密模式", fontSize = 15.sp, color = GuardianText)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "开启后关键词列表遮罩显示，弹窗不显示原文，删除需密码",
-                            fontSize = 12.sp, color = GuardianTextFaint
-                        )
-                    }
-                    androidx.compose.material3.Switch(
-                        checked = encrypted,
-                        onCheckedChange = { want ->
-                            if (want) {
-                                // 开启加密：必须先设密码
-                                pwd1 = ""; pwd2 = ""
-                                showSetPwd = true
-                            } else if (prefs.keywordPasswordHash.isEmpty()) {
-                                // 从没设过密码（异常残留状态），直接关
-                                encrypted = false
-                                prefs.keywordsEncrypted = false
-                            } else {
-                                // 关闭加密同样要验密码，否则"防自己"形同虚设
-                                verifyInput = ""
-                                verifyError = false
-                                showVerifyPwd = true
-                            }
-                        },
-                        colors = androidx.compose.material3.SwitchDefaults.colors(
-                            checkedThumbColor = GuardianAccent,
-                            checkedTrackColor = GuardianAccent
-                        )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("关键词加密模式", fontSize = 15.sp, color = GuardianText)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "开启后关键词列表遮罩显示，弹窗不显示原文，删除需密码",
+                        fontSize = 12.sp, color = GuardianTextFaint
                     )
                 }
-                if (encrypted) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(GuardianBg)
-                            .clickable {
-                                pwd1 = ""; pwd2 = ""
-                                showSetPwd = true
-                            }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("修改密码", fontSize = 13.sp, color = GuardianAccent)
-                    }
+                androidx.compose.material3.Switch(
+                    checked = encrypted,
+                    onCheckedChange = { want ->
+                        if (want) {
+                            // 开启加密：必须先设密码
+                            pwd1 = ""; pwd2 = ""
+                            showSetPwd = true
+                        } else if (prefs.keywordPasswordHash.isEmpty()) {
+                            // 从没设过密码（异常残留状态），直接关
+                            encrypted = false
+                            prefs.keywordsEncrypted = false
+                        } else {
+                            // 关闭加密同样要验密码，否则"防自己"形同虚设
+                            verifyInput = ""
+                            verifyError = false
+                            showVerifyPwd = true
+                        }
+                    },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = GuardianAccent,
+                        checkedTrackColor = GuardianAccent
+                    )
+                )
+            }
+            if (encrypted) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(GuardianBg)
+                        .clickable {
+                            pwd1 = ""; pwd2 = ""
+                            showSetPwd = true
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("修改密码", fontSize = 13.sp, color = GuardianAccent)
                 }
             }
         }
@@ -273,14 +345,10 @@ fun SettingsScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(32.dp))
 
         // 数据导出
-        Text("数据", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .clickable(enabled = !exporting) {
+        SectionLabel("数据")
+        GuardianCard(
+            onClick = if (exporting) null else {
+                {
                     scope.launch {
                         exporting = true
                         try {
@@ -300,36 +368,32 @@ fun SettingsScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
+            }
         ) {
-            Text(
-                if (exporting) "导出中…" else "导出触发记录 JSON",
-                fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f)
-            )
-            Text("→", fontSize = 20.sp, color = GuardianAccent)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (exporting) "导出中…" else "导出触发记录 JSON",
+                    fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f)
+                )
+                Text("→", fontSize = 18.sp, color = GuardianAccent)
+            }
         }
 
         Spacer(Modifier.height(40.dp))
 
         // 关于
-        Text("关于", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .padding(16.dp)
+        SectionLabel("关于")
+        GuardianCard(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)
         ) {
-            Column {
-                Text("守卫 Guardian v1.0", fontSize = 15.sp, color = GuardianText)
-                Spacer(Modifier.height(4.dp))
-                Text("帮你守住专注的 Android 自律工具", fontSize = 13.sp, color = GuardianTextDim)
-                Spacer(Modifier.height(4.dp))
-                Text("对标 one sec · 本地运行 · 不联网不上传", fontSize = 12.sp, color = GuardianTextFaint)
-            }
+            Text("守卫 Guardian v1.1", fontSize = 15.sp, color = GuardianText)
+            Spacer(Modifier.height(4.dp))
+            Text("帮你守住专注的 Android 自律工具", fontSize = 13.sp, color = GuardianTextDim)
+            Spacer(Modifier.height(4.dp))
+            Text("对标 one sec · 本地运行 · 不联网不上传", fontSize = 12.sp, color = GuardianTextFaint)
         }
+
+        Spacer(Modifier.height(32.dp))
     }
 
     if (showVerifyPwd) {

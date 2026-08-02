@@ -2,6 +2,7 @@ package com.gangyi.guardian.ui.apps
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,8 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -31,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -38,11 +42,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import com.gangyi.guardian.data.db.GuardianRepository
+import com.gangyi.guardian.ui.components.GuardianChip
+import com.gangyi.guardian.ui.components.GuardianTopBar
 import com.gangyi.guardian.ui.theme.GuardianAccent
+import com.gangyi.guardian.ui.theme.GuardianAccentSoft
 import com.gangyi.guardian.ui.theme.GuardianBg
-import com.gangyi.guardian.ui.theme.GuardianSuccess
+import com.gangyi.guardian.ui.theme.GuardianBorder
+import com.gangyi.guardian.ui.theme.GuardianSurface
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
+import com.gangyi.guardian.ui.theme.GuardianTextFaint
 import com.gangyi.guardian.util.AppInfo
 import com.gangyi.guardian.util.InstalledApps
 import kotlinx.coroutines.Dispatchers
@@ -70,17 +79,14 @@ fun AppPickerScreen(onBack: () -> Unit) {
         modifier = Modifier.fillMaxSize().background(GuardianBg).padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(24.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "返回",
-                tint = GuardianText,
-                modifier = Modifier.size(28.dp).clickable { onBack() }
-            )
-            Spacer(Modifier.width(12.dp))
-            Text("选择要监控的 App", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GuardianText)
-        }
-        Spacer(Modifier.height(16.dp))
+        GuardianTopBar("选择要监控的 App", onBack)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "已选 ${selected.size} 个",
+            fontSize = 13.sp,
+            color = GuardianTextFaint,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
 
         val list = apps
         if (list == null) {
@@ -88,7 +94,7 @@ fun AppPickerScreen(onBack: () -> Unit) {
                 CircularProgressIndicator(color = GuardianAccent)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(list, key = { it.packageName }) { app ->
                     val checked = app.packageName in selected
                     AppRow(app, checked) {
@@ -107,8 +113,16 @@ fun AppPickerScreen(onBack: () -> Unit) {
 
 @Composable
 private fun AppRow(app: AppInfo, checked: Boolean, onToggle: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
     Row(
-        modifier = Modifier.fillMaxWidth().clickable { onToggle() }.padding(vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(GuardianSurface)
+            // 选中态用主色描边，一眼扫得出哪些在监控，不用逐行读文字
+            .border(1.dp, if (checked) GuardianAccent.copy(alpha = 0.55f) else GuardianBorder, shape)
+            .clickable { onToggle() }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val bmp = remember(app.packageName) { app.icon?.toBitmap(72, 72)?.asImageBitmap() }
@@ -116,21 +130,20 @@ private fun AppRow(app: AppInfo, checked: Boolean, onToggle: () -> Unit) {
             Image(
                 bitmap = bmp,
                 contentDescription = null,
-                modifier = Modifier.size(40.dp)
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
             )
         } else {
-            Box(Modifier.size(40.dp).background(GuardianTextDim))
+            Box(Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(GuardianTextDim))
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(app.label, fontSize = 16.sp, color = GuardianText)
             Text(app.packageName, fontSize = 12.sp, color = GuardianTextDim)
         }
-        Text(
-            if (checked) "✓ 监控中" else "添加",
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (checked) GuardianSuccess else GuardianAccent
-        )
+        if (checked) {
+            GuardianChip("监控中", GuardianAccent, GuardianAccentSoft, Icons.Filled.Check)
+        } else {
+            Text("添加", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = GuardianTextFaint)
+        }
     }
 }

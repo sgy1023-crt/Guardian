@@ -1,6 +1,7 @@
 package com.gangyi.guardian.ui.onboarding
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,8 +37,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gangyi.guardian.permission.Permissions
+import com.gangyi.guardian.ui.components.GuardianChip
 import com.gangyi.guardian.ui.theme.GuardianAccent
 import com.gangyi.guardian.ui.theme.GuardianBg
+import com.gangyi.guardian.ui.theme.GuardianBorder
 import com.gangyi.guardian.ui.theme.GuardianSuccess
 import com.gangyi.guardian.ui.theme.GuardianSurface
 import com.gangyi.guardian.ui.theme.GuardianSurface2
@@ -194,16 +197,23 @@ private fun StepCard(
     isActive: Boolean,
     onClick: () -> Unit
 ) {
-    val borderBg = when {
-        granted -> GuardianSurface
-        isActive -> GuardianSurface2
-        else -> GuardianSurface
-    }
+    val shape = RoundedCornerShape(14.dp)
+    val borderBg = if (isActive && !granted) GuardianSurface2 else GuardianSurface
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(shape)
             .background(borderBg)
+            // 当前该办的这一步用主色描边点出来，办完的转绿，其余保持安静
+            .border(
+                1.dp,
+                when {
+                    granted -> GuardianSuccess.copy(alpha = 0.4f)
+                    isActive -> GuardianAccent.copy(alpha = 0.55f)
+                    else -> GuardianBorder
+                },
+                shape
+            )
             .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -229,7 +239,7 @@ private fun StepCard(
                 Text(step.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = GuardianText)
                 if (step.isOptional) {
                     Spacer(Modifier.size(8.dp))
-                    Text("可选", fontSize = 10.sp, color = GuardianTextFaint)
+                    GuardianChip("可选", GuardianTextDim, GuardianSurface2)
                 }
             }
             Text(step.desc, fontSize = 12.sp, color = GuardianTextDim, modifier = Modifier.padding(top = 2.dp))

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.gangyi.guardian.MainActivity
 import com.gangyi.guardian.R
@@ -17,6 +18,7 @@ import com.gangyi.guardian.data.MODE_FIXED
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.detect.ForegroundAppDetector
+import com.gangyi.guardian.guard.EscalationTracker
 import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
 import com.gangyi.guardian.overlay.OverlayController
 import kotlinx.coroutines.CoroutineScope
@@ -46,12 +48,16 @@ class MonitorService : Service() {
     @Volatile
     private var monitoredPkgs: Set<String> = emptySet()
 
+    /** 上次踢桌面的时间，用于节流，避免每秒踢一次闪屏 */
+    private var lastKickAt = 0L
+
     override fun onCreate() {
         super.onCreate()
         prefs = MonitorPrefs(this)
         repo = GuardianRepository(this)
         overlay = OverlayController.get(this)
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        EscalationTracker.init(this)
         startForeground(NOTIF_ID, buildNotification())
         scope.launch {
             repo.monitoredPackages.collect { monitoredPkgs = it.toSet() }
@@ -82,6 +88,34 @@ class MonitorService : Service() {
                 }
 
                 val pkg = ForegroundAppDetector.getForegroundPackage(this@MonitorService)
+
+                // 封锁优先于一切：被封的 App 一露头就踢回桌面，连弹窗判定都不用走。
+                // 注意这里不看 monitoredPkgs——封锁是对"当时那个前台包"生效的，
+                // 哪怕用户事后把它从监控列表删了，封锁期内照样踢。
+                if (EscalationTracker.isLocked(pkg)) {
+                    val now = System.currentTimeMillis()
+                    val remaining = EscalationTracker.lockRemainingMs(pkg)
+                    // 节流：轮询 1s 一次，但踢桌面不能每秒来一遍，否则是疯狂闪屏。
+                    // 踢一次给 3 秒观察期。
+                    if (now - lastKickAt > KICK_THROTTLE_MS) {
+                        lastKickAt = now
+                        val kicked = ClipboardWatcherService.kickToHome()
+                        withContext(Dispatchers.Main) {
+                            overlay.showLockdown(remaining, kicked)
+                        }
+                        Log.d(TAG, "封锁拦截 pkg=$pkg 剩余=${remaining / 1000}s 踢出=$kicked")
+                    } else if (!overlay.isShowing) {
+                        // 兜底：无障碍掉线踢不动人时，用户还留在被封 App 里，
+                        // 而且可能刚把封锁窗点掉了。这里立刻补一层盖回去，
+                        // 让"进不去"这件事不完全依赖无障碍（悬浮窗权限比它稳得多）。
+                        withContext(Dispatchers.Main) {
+                            overlay.showLockdown(remaining, kicked = false)
+                        }
+                    }
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
                 val hit = pkg != null && pkg in monitoredPkgs && pkg != packageName
 
                 if (hit) {
@@ -91,11 +125,30 @@ class MonitorService : Service() {
                     val freshTrigger = now - lastAt > cooldownMs
                     if (freshTrigger && !overlay.isShowing) {
                         lastTriggerAtByPkg[pkg!!] = now
-                        val reminder = pickReminder()
-                        withContext(Dispatchers.Main) {
-                            overlay.show(reminder, OverlayController.SOURCE_APP)
+                        // 记一次触发；窗口内攒够次数就升级为封锁。
+                        // 放在这个 if 里面 = 一次真实弹窗算一次，不会被轮询空转刷计数。
+                        //
+                        // 只在包名"刚被系统事件确认过"时才记：沿用缓存的值可能已经过期，
+                        // 拿它去攒计数会记到错的 App 头上，最坏情况是封错对象。
+                        // 漏记一次只是晚一轮封锁，封错却会让用户彻底不信这个功能。
+                        val shouldLock = ForegroundAppDetector.isFreshlyConfirmed() &&
+                            EscalationTracker.recordTrigger(pkg)
+                        if (shouldLock) {
+                            val remaining = EscalationTracker.lockRemainingMs(pkg)
+                            val kicked = ClipboardWatcherService.kickToHome()
+                            lastKickAt = now
+                            withContext(Dispatchers.Main) {
+                                overlay.showLockdown(remaining, kicked)
+                            }
+                            launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
+                            Log.d(TAG, "升级封锁 pkg=$pkg 踢出=$kicked")
+                        } else {
+                            val reminder = pickReminder()
+                            withContext(Dispatchers.Main) {
+                                overlay.show(reminder, OverlayController.SOURCE_APP)
+                            }
+                            launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
                         }
-                        launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
                     }
                 } else {
                     // 离开被监控 App：收起自己弹的窗（不动关键词弹窗）。冷却时间不重置。
@@ -164,6 +217,8 @@ class MonitorService : Service() {
         private const val CHANNEL_ID = "guardian_monitor"
         private const val POLL_INTERVAL_MS = 1000L
         private const val SCREEN_OFF_POLL_MS = 5000L
+        private const val KICK_THROTTLE_MS = 3000L
+        private const val TAG = "GuardianMonitor"
 
         fun start(context: Context) {
             val intent = Intent(context, MonitorService::class.java)

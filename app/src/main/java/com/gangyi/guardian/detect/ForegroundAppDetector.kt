@@ -32,10 +32,29 @@ object ForegroundAppDetector {
                 found = event.packageName
             }
         }
-        if (found != null) lastKnown = found
+        if (found != null) {
+            lastKnown = found
+            lastConfirmedAt = end
+        }
         return lastKnown
     }
 
+    /**
+     * 上次结果是否"刚由系统事件确认过"（而非沿用缓存）。
+     *
+     * 弹窗判定用缓存值没问题——用户没切 App 就该继续提醒。
+     * 但**封锁**必须更严：万一缓存里是个过期包名，就会把触发计数记到错的 App 头上，
+     * 甚至封错对象。宁可漏记一次，也不能封错——所以升级封锁前先问这里。
+     */
+    fun isFreshlyConfirmed(): Boolean =
+        lastConfirmedAt > 0 && System.currentTimeMillis() - lastConfirmedAt <= FRESH_WINDOW_MS
+
+    @Volatile
+    private var lastConfirmedAt = 0L
+
     private const val LOOKBACK_MS = 60_000L
     private const val COLD_LOOKBACK_MS = 30 * 60_000L
+
+    /** 事件确认后多久内仍算"新鲜"。略大于事件回看窗口，避免边界抖动 */
+    private const val FRESH_WINDOW_MS = 70_000L
 }

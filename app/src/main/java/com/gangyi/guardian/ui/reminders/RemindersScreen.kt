@@ -1,6 +1,7 @@
 package com.gangyi.guardian.ui.reminders
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,9 +48,13 @@ import com.gangyi.guardian.data.MODE_RANDOM
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.Reminder
+import com.gangyi.guardian.ui.components.GuardianChip
 import com.gangyi.guardian.ui.theme.GuardianAccent
+import com.gangyi.guardian.ui.theme.GuardianAccentSoft
 import com.gangyi.guardian.ui.theme.GuardianBg
+import com.gangyi.guardian.ui.theme.GuardianBorder
 import com.gangyi.guardian.ui.theme.GuardianSurface
+import com.gangyi.guardian.ui.theme.GuardianSurface2
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
 import com.gangyi.guardian.ui.theme.GuardianTextFaint
@@ -127,27 +132,33 @@ fun RemindersScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(12.dp))
 
-            LazyColumn {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(reminders, key = { if (it.builtin) "b_${it.id}" else "c_${it.id}" }) { r ->
                     val isFixed = mode == MODE_FIXED && r.id == fixedId
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
                             .background(GuardianSurface)
+                            .border(
+                                1.dp,
+                                if (isFixed) GuardianAccent.copy(alpha = 0.5f) else GuardianBorder,
+                                RoundedCornerShape(14.dp)
+                            )
                             // 只有"指定"模式下点条目才有意义，随机模式下点击不做事，避免莫名切换模式
                             .clickable(enabled = mode == MODE_FIXED) { applyFixedId(r.id) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(r.text, fontSize = 15.sp, color = GuardianText)
                             if (isFixed) {
-                                Spacer(Modifier.height(4.dp))
-                                Text("· 固定提醒语 ·", fontSize = 11.sp, color = GuardianAccent)
+                                Spacer(Modifier.height(6.dp))
+                                GuardianChip("固定提醒语", GuardianAccent, GuardianAccentSoft, Icons.Filled.Check)
                             }
                         }
                         if (r.builtin) {
-                            Text("内置", fontSize = 11.sp, color = GuardianTextFaint)
+                            GuardianChip("内置", GuardianTextDim, GuardianSurface2)
                         } else {
                             Icon(
                                 Icons.Filled.Edit, "编辑", tint = GuardianTextDim,
@@ -173,7 +184,6 @@ fun RemindersScreen(onBack: () -> Unit) {
                             )
                         }
                     }
-                    Spacer(Modifier.height(6.dp))
                 }
             }
         }

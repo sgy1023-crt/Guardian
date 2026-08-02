@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.gangyi.guardian.data.MonitorPrefs
+import com.gangyi.guardian.guard.EscalationTracker
 import com.gangyi.guardian.permission.Permissions
 import com.gangyi.guardian.ui.apps.AppPickerScreen
 import com.gangyi.guardian.ui.home.HomeScreen
@@ -33,6 +34,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()
+        // UI 层要读封锁状态（主页总开关的封锁期禁用判断），先确保已初始化
+        EscalationTracker.init(this)
         setContent {
             GuardianTheme {
                 Surface(

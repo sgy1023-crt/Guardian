@@ -31,6 +31,16 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_OVERLAY_COUNTDOWN, 5)
         set(value) = sp.edit().putInt(KEY_OVERLAY_COUNTDOWN, value).apply()
 
+    /** 弹窗振动开关，默认开。别人察觉不到，但身体会记住 */
+    var alertVibrate: Boolean
+        get() = sp.getBoolean(KEY_ALERT_VIBRATE, true)
+        set(value) = sp.edit().putBoolean(KEY_ALERT_VIBRATE, value).apply()
+
+    /** 弹窗提示音开关，默认开。跟随系统静音，静音时只振动 */
+    var alertSound: Boolean
+        get() = sp.getBoolean(KEY_ALERT_SOUND, true)
+        set(value) = sp.edit().putBoolean(KEY_ALERT_SOUND, value).apply()
+
     /** 关键词加密模式开关 */
     var keywordsEncrypted: Boolean
         get() = sp.getBoolean(KEY_KW_ENCRYPTED, false)
@@ -56,16 +66,42 @@ class MonitorPrefs(context: Context) {
         get() = sp.getLong(KEY_FIXED_REMINDER_ID, -1L)
         set(value) = sp.edit().putLong(KEY_FIXED_REMINDER_ID, value).apply()
 
+    /** 升级封锁总开关：反复点掉弹窗时是否升级为踢回桌面 + 定时封锁 */
+    var escalationEnabled: Boolean
+        get() = sp.getBoolean(KEY_ESC_ENABLED, true)
+        set(value) = sp.edit().putBoolean(KEY_ESC_ENABLED, value).apply()
+
+    /** 窗口内弹够几次触发封锁，默认 3 次 */
+    var escalationThreshold: Int
+        get() = sp.getInt(KEY_ESC_THRESHOLD, 3)
+        set(value) = sp.edit().putInt(KEY_ESC_THRESHOLD, value).apply()
+
+    /** 计数的滑动窗口分钟数，默认 30 分钟。超窗的旧记录自动丢弃，不秋后算账 */
+    var escalationWindowMinutes: Int
+        get() = sp.getInt(KEY_ESC_WINDOW, 30)
+        set(value) = sp.edit().putInt(KEY_ESC_WINDOW, value).apply()
+
+    /** 封锁基础时长分钟数，默认 3 分钟。短时间内重复触发会翻倍 */
+    var lockdownMinutes: Int
+        get() = sp.getInt(KEY_LOCKDOWN_MINUTES, 3)
+        set(value) = sp.edit().putInt(KEY_LOCKDOWN_MINUTES, value).apply()
+
     private companion object {
         const val KEY_ENABLED = "service_enabled"
         const val KEY_COOLDOWN = "cooldown_seconds"
         const val KEY_SCAN_INTERVAL = "screen_scan_interval"
         const val KEY_OVERLAY_COUNTDOWN = "overlay_countdown"
+        const val KEY_ALERT_VIBRATE = "alert_vibrate"
+        const val KEY_ALERT_SOUND = "alert_sound"
         const val KEY_ONBOARDING = "onboarding_done"
         const val KEY_REMINDER_MODE = "reminder_mode"
         const val KEY_FIXED_REMINDER_ID = "fixed_reminder_id"
         const val KEY_KW_ENCRYPTED = "kw_encrypted"
         const val KEY_KW_PASSWORD_HASH = "kw_password_hash"
+        const val KEY_ESC_ENABLED = "escalation_enabled"
+        const val KEY_ESC_THRESHOLD = "escalation_threshold"
+        const val KEY_ESC_WINDOW = "escalation_window_minutes"
+        const val KEY_LOCKDOWN_MINUTES = "lockdown_minutes"
     }
 }
 

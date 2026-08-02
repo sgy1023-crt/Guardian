@@ -31,8 +31,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,9 +43,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gangyi.guardian.data.db.AppCount
 import com.gangyi.guardian.data.db.GuardianRepository
+import com.gangyi.guardian.ui.components.GuardianTopBar
+import com.gangyi.guardian.ui.components.SectionLabel
 import com.gangyi.guardian.ui.theme.GuardianAccent
 import com.gangyi.guardian.ui.theme.GuardianBg
 import com.gangyi.guardian.ui.theme.GuardianSurface
+import com.gangyi.guardian.ui.theme.GuardianSurface2
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
 import com.gangyi.guardian.ui.theme.GuardianTextFaint
@@ -134,23 +140,25 @@ fun StatsScreen(onBack: () -> Unit) {
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(24.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回",
-                tint = GuardianText, modifier = Modifier.size(28.dp).clickable { onBack() }
-            )
-            Spacer(Modifier.weight(1f))
-            Text("统计", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GuardianText)
-            Spacer(Modifier.weight(1f))
-            Spacer(Modifier.size(28.dp))
-        }
+        GuardianTopBar("统计", onBack)
         Spacer(Modifier.height(28.dp))
 
-        // 今日大数字
+        // 今日大数字：底下垫一层光晕，让这个主角数字不再干巴巴地悬在页面上
         Box(
             modifier = Modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
+            Canvas(modifier = Modifier.fillMaxWidth().height(150.dp)) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(GuardianAccent.copy(alpha = 0.16f), Color.Transparent),
+                        center = Offset(size.width / 2f, size.height / 2f),
+                        radius = size.height / 1.5f
+                    ),
+                    radius = size.height / 1.5f,
+                    center = Offset(size.width / 2f, size.height / 2f)
+                )
+            }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("今日提醒", fontSize = 14.sp, color = GuardianTextDim)
                 Spacer(Modifier.height(8.dp))
@@ -168,8 +176,7 @@ fun StatsScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(32.dp))
 
         // 7 日趋势
-        Text("近 7 日趋势", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(12.dp))
+        SectionLabel("近 7 日趋势")
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -186,10 +193,17 @@ fun StatsScreen(onBack: () -> Unit) {
                 val chartH = size.height - topPad - bottomPad
 
                 dailyCounts.forEachIndexed { i, (_, count) ->
-                    val barH = (count.toFloat() / maxCount) * chartH
                     val x = i * w + (w - barW) / 2
+                    // 零值也画一小截底座，否则空白列看起来像渲染坏了
+                    val barH = if (count == 0) 3f
+                    else ((count.toFloat() / maxCount) * chartH).coerceAtLeast(6f)
                     val y = size.height - bottomPad - barH
-                    drawRect(GuardianAccent, Offset(x, y), Size(barW, barH))
+                    drawRoundRect(
+                        color = if (count == 0) GuardianSurface2 else GuardianAccent,
+                        topLeft = Offset(x, y),
+                        size = Size(barW, barH),
+                        cornerRadius = CornerRadius(barW / 2.6f, barW / 2.6f)
+                    )
                 }
             }
             // day labels — 跟柱子对齐：每个 label 占一列宽度，居中

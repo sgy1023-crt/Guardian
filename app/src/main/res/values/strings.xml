@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">守卫</string>
-    <string name="accessibility_description">守卫需要无障碍权限来监听窗口变化，从而在你复制含关键词的内容时及时弹出"停顿点"提醒。守卫不会读取窗口里的任何文字，只会在事件发生时去读系统剪贴板。</string>
-    <string name="accessibility_summary">复制含关键词内容时，触发停顿提醒</string>
+    <string name="accessibility_description">守卫需要无障碍权限来读取当前屏幕上的文字，从而在屏幕出现你自己设定的关键词时弹出"停顿点"提醒，并在你反复触发提醒时把你送回桌面。所有文字只在本机内存中比对，不保存、不联网、不上传。</string>
+    <string name="accessibility_summary">屏幕出现关键词时提醒，反复触发时送回桌面</string>
 </resources>

@@ -1,7 +1,9 @@
 package com.gangyi.guardian.ui.keywords
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
@@ -35,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -43,8 +47,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
+import com.gangyi.guardian.ui.components.EmptyState
+import com.gangyi.guardian.ui.components.GuardianChip
 import com.gangyi.guardian.ui.theme.GuardianAccent
+import com.gangyi.guardian.ui.theme.GuardianAccentSoft
 import com.gangyi.guardian.ui.theme.GuardianBg
+import com.gangyi.guardian.ui.theme.GuardianBorder
 import com.gangyi.guardian.ui.theme.GuardianSurface
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
@@ -94,23 +102,25 @@ fun KeywordsScreen(onBack: () -> Unit) {
                 fontSize = 13.sp, color = GuardianTextDim
             )
             if (encrypted) {
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Lock, contentDescription = null, tint = GuardianAccent, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.size(6.dp))
-                    Text("加密模式已开启", fontSize = 12.sp, color = GuardianAccent)
-                }
+                Spacer(Modifier.height(8.dp))
+                GuardianChip("加密模式已开启", GuardianAccent, GuardianAccentSoft, Icons.Filled.Lock)
             }
             Spacer(Modifier.height(16.dp))
 
             if (keywords.isEmpty()) {
-                Text("暂无关键词", fontSize = 14.sp, color = GuardianTextDim)
+                EmptyState(
+                    icon = Icons.Filled.Key,
+                    title = "还没有关键词",
+                    hint = "点右下角加号添加。屏幕上出现这些词时，守卫会弹出停顿提醒。"
+                )
             } else {
-                LazyColumn {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(keywords, key = { it }) { kw ->
                         Row(
                             modifier = Modifier.fillMaxWidth()
-                                .background(GuardianSurface, RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(GuardianSurface)
+                                .border(1.dp, GuardianBorder, RoundedCornerShape(12.dp))
                                 .clickable {
                                     if (encrypted) {
                                         pwdInput = ""
