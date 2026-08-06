@@ -87,6 +87,17 @@ Android 不允许第三方应用杀死其他应用进程。使用 Home Intent �
 
 `ClipboardWatcherService` 的关键词检测继续使用 `OverlayContent.Reminder`（旧版简单弹窗），本次改动不影响该路径。
 
+## P1：单 App 全天时长上限（已完成）
+
+每个被监控 App 可设每日配额（0~180 分钟，0 = 不限）。
+
+- `MonitorPrefs.dailyLimitMinutes` 存储设置
+- `MonitorService.handleMonitoredApp()` 无会话时先查询 `totalSecondsToday()`，超限则弹 `DailyLimitCard`
+- `DailyLimitCardContent` 显示：今日已用 / 每日上限 / 剩余 三项统计 + 进度条 + 脉冲动画
+- 仅统计 COMPLETED 和 EXPIRED 状态的会话，ACTIVE 会话不计入（正在进行中）
+- 配额日清：`getTodayStartMs()` 计算今日零点，Room 按 `startTime >= todayStart` 过滤
+- 零时无行为：仅再次打开该 App 时才触发检查
+
 ## P3：冷却递增（已完成）
 
 打开同一 App 越频繁，意图声明卡强制等待越久：
