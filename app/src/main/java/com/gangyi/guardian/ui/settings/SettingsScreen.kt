@@ -70,6 +70,9 @@ fun SettingsScreen(onBack: () -> Unit) {
     var cooldown by remember { mutableFloatStateOf(prefs.cooldownSeconds.toFloat()) }
     var scanInterval by remember { mutableFloatStateOf(prefs.screenScanIntervalSeconds) }
     var overlayCountdown by remember { mutableFloatStateOf(prefs.overlayCountdownSeconds.toFloat()) }
+    var defaultTimeLimit by remember { mutableFloatStateOf(prefs.defaultTimeLimitSeconds.toFloat()) }
+    var extensionSecs by remember { mutableFloatStateOf(prefs.extensionSeconds.toFloat()) }
+    var maxExtensions by remember { mutableFloatStateOf(prefs.maxExtensionCount.toFloat()) }
     var exporting by remember { mutableStateOf(false) }
     var encrypted by remember { mutableStateOf(prefs.keywordsEncrypted) }
     var showSetPwd by remember { mutableStateOf(false) }
@@ -202,6 +205,99 @@ fun SettingsScreen(onBack: () -> Unit) {
                     "弹窗出现后必须冷静这么多秒才能点关闭，默认 5 秒，最高 3 分钟",
                     fontSize = 12.sp, color = GuardianTextFaint
                 )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // 限时使用（意图声明模式）
+        Text("限时使用", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("默认使用时长", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                    Text("${defaultTimeLimit.toInt() / 60} 分钟", fontSize = 14.sp, color = GuardianAccent)
+                }
+                Slider(
+                    value = defaultTimeLimit,
+                    onValueChange = { defaultTimeLimit = it },
+                    onValueChangeFinished = { prefs.defaultTimeLimitSeconds = defaultTimeLimit.toInt() },
+                    valueRange = 60f..3600f,
+                    steps = 58,
+                    colors = SliderDefaults.colors(
+                        thumbColor = GuardianAccent,
+                        activeTrackColor = GuardianAccent,
+                        inactiveTrackColor = GuardianBg
+                    )
+                )
+                Text("打开被监控 App 时，时长选择器的默认值", fontSize = 12.sp, color = GuardianTextFaint)
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("每次续时时长", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                    Text("${extensionSecs.toInt() / 60} 分钟", fontSize = 14.sp, color = GuardianAccent)
+                }
+                Slider(
+                    value = extensionSecs,
+                    onValueChange = { extensionSecs = it },
+                    onValueChangeFinished = { prefs.extensionSeconds = extensionSecs.toInt() },
+                    valueRange = 60f..600f,
+                    steps = 9,
+                    colors = SliderDefaults.colors(
+                        thumbColor = GuardianAccent,
+                        activeTrackColor = GuardianAccent,
+                        inactiveTrackColor = GuardianBg
+                    )
+                )
+                Text("时间到了点「续时」时可以续多久", fontSize = 12.sp, color = GuardianTextFaint)
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("最大续时次数", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                    Text("${maxExtensions.toInt()} 次", fontSize = 14.sp, color = GuardianAccent)
+                }
+                Slider(
+                    value = maxExtensions,
+                    onValueChange = { maxExtensions = it },
+                    onValueChangeFinished = { prefs.maxExtensionCount = maxExtensions.toInt() },
+                    valueRange = 1f..5f,
+                    steps = 3,
+                    colors = SliderDefaults.colors(
+                        thumbColor = GuardianAccent,
+                        activeTrackColor = GuardianAccent,
+                        inactiveTrackColor = GuardianBg
+                    )
+                )
+                Text("单次打开最多续几次；设为 1 最严格", fontSize = 12.sp, color = GuardianTextFaint)
             }
         }
 

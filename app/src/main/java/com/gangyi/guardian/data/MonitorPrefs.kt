@@ -56,6 +56,21 @@ class MonitorPrefs(context: Context) {
         get() = sp.getLong(KEY_FIXED_REMINDER_ID, -1L)
         set(value) = sp.edit().putLong(KEY_FIXED_REMINDER_ID, value).apply()
 
+    /** 意图声明模式下，每次使用的默认时长（秒），默认 10 分钟 */
+    var defaultTimeLimitSeconds: Int
+        get() = sp.getInt(KEY_DEFAULT_TIME_LIMIT, 600)
+        set(value) = sp.edit().putInt(KEY_DEFAULT_TIME_LIMIT, value).apply()
+
+    /** 到时后每次续时增加多少秒，默认 180 秒（3 分钟） */
+    var extensionSeconds: Int
+        get() = sp.getInt(KEY_EXTENSION_SECONDS, 180)
+        set(value) = sp.edit().putInt(KEY_EXTENSION_SECONDS, value).apply()
+
+    /** 单次会话最多续时次数，默认 2 次 */
+    var maxExtensionCount: Int
+        get() = sp.getInt(KEY_MAX_EXTENSIONS, 2)
+        set(value) = sp.edit().putInt(KEY_MAX_EXTENSIONS, value).apply()
+
     private companion object {
         const val KEY_ENABLED = "service_enabled"
         const val KEY_COOLDOWN = "cooldown_seconds"
@@ -66,6 +81,9 @@ class MonitorPrefs(context: Context) {
         const val KEY_FIXED_REMINDER_ID = "fixed_reminder_id"
         const val KEY_KW_ENCRYPTED = "kw_encrypted"
         const val KEY_KW_PASSWORD_HASH = "kw_password_hash"
+        const val KEY_DEFAULT_TIME_LIMIT = "default_time_limit"
+        const val KEY_EXTENSION_SECONDS = "extension_seconds"
+        const val KEY_MAX_EXTENSIONS = "max_extensions"
     }
 }
 

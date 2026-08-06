@@ -10,6 +10,32 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.gangyi.guardian.ui.theme.GuardianTheme
 
+/** 弹窗内容类型。OverlayController 根据类型渲染不同 UI。 */
+sealed class OverlayContent {
+    /** 旧版简单提醒（保留兼容，关键词触发仍用这个） */
+    data class Reminder(val text: String) : OverlayContent()
+
+    /** 意图声明卡：打开被监控 App 时弹出，用户填理由 + 选时长 */
+    data class IntentCard(
+        val appLabel: String,
+        val appPackage: String,
+        val defaultTimeSeconds: Int,
+        val onStart: (reason: String, timeLimitSeconds: Int) -> Unit,
+        val onCancel: () -> Unit
+    ) : OverlayContent()
+
+    /** 到时回顾卡：限时到了，让用户选择退出 / 续时 */
+    data class TimeUpCard(
+        val appLabel: String,
+        val reason: String,
+        val remainingExtensions: Int,
+        val extensionSeconds: Int,
+        val onDone: () -> Unit,
+        val onExtend: () -> Unit,
+        val onExit: () -> Unit
+    ) : OverlayContent()
+}
+
 /**
  * 负责把停顿弹窗作为系统级悬浮窗挂到任意界面之上。
  * 全屏 MATCH_PARENT 拦截所有触摸，用户只能点"我清醒了"关闭。
@@ -30,7 +56,8 @@ class OverlayController private constructor(context: Context) {
 
     val isShowing: Boolean get() = composeView != null
 
-    fun show(reminder: String, source: String) {
+    /** 弹出新弹窗。同一时刻只有一个弹窗，如果已有弹窗则跳过。 */
+    fun show(content: OverlayContent, source: String) {
         if (isShowing) return
 
         val owner = OverlayLifecycleOwner().apply { onCreate() }
@@ -40,10 +67,42 @@ class OverlayController private constructor(context: Context) {
             setViewTreeSavedStateRegistryOwner(owner)
             setContent {
                 GuardianTheme {
-                    InterventionContent(
-                        reminder = reminder,
-                        onDismiss = { dismissCurrent() }
-                    )
+                    when (content) {
+                        is OverlayContent.Reminder -> InterventionContent(
+                            reminder = content.text,
+                            onDismiss = { dismiss(source) }
+                        )
+                        is OverlayContent.IntentCard -> IntentCardContent(
+                            appLabel = content.appLabel,
+                            defaultTimeSeconds = content.defaultTimeSeconds,
+                            onStart = { reason, seconds ->
+                                dismiss(source)
+                                content.onStart(reason, seconds)
+                            },
+                            onCancel = {
+                                dismiss(source)
+                                content.onCancel()
+                            }
+                        )
+                        is OverlayContent.TimeUpCard -> TimeUpCardContent(
+                            appLabel = content.appLabel,
+                            reason = content.reason,
+                            remainingExtensions = content.remainingExtensions,
+                            extensionSeconds = content.extensionSeconds,
+                            onDone = {
+                                dismiss(source)
+                                content.onDone()
+                            },
+                            onExtend = {
+                                dismiss(source)
+                                content.onExtend()
+                            },
+                            onExit = {
+                                dismiss(source)
+                                content.onExit()
+                            }
+                        )
+                    }
                 }
             }
         }

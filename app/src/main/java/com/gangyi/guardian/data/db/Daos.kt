@@ -78,4 +78,34 @@ interface TriggerLogDao {
     suspend fun lastTimestamp(): Long?
 }
 
+@Dao
+interface IntentSessionDao {
+    @Insert
+    suspend fun insert(session: IntentSession): Long
+
+    @Query("UPDATE intent_sessions SET status = :status, endedAt = :endedAt WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String, endedAt: Long = System.currentTimeMillis())
+
+    @Query("UPDATE intent_sessions SET extensionCount = extensionCount + 1, timeLimitSeconds = timeLimitSeconds + :extraSeconds, status = :status WHERE id = :id")
+    suspend fun extendSession(id: Long, extraSeconds: Int, status: String = IntentSession.STATUS_EXTENDED)
+
+    @Query("SELECT * FROM intent_sessions WHERE packageName = :packageName AND status = :status ORDER BY startTime DESC LIMIT 1")
+    suspend fun getActive(packageName: String, status: String = IntentSession.STATUS_ACTIVE): IntentSession?
+
+    /** 清除所有进行中/续时状态的会话（服务启动时兜底，防止异常残留） */
+    @Query("UPDATE intent_sessions SET status = 'EXPIRED', endedAt = :now WHERE status IN ('ACTIVE', 'EXTENDED')")
+    suspend fun expireAllActive(now: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM intent_sessions ORDER BY startTime DESC LIMIT :limit")
+    suspend fun listRecent(limit: Int = 50): List<IntentSession>
+
+    /** 今天针对某个 App 已有的意图声明次数 */
+    @Query("SELECT COUNT(*) FROM intent_sessions WHERE packageName = :pkg AND startTime >= :todayStart")
+    suspend fun countTodayByPackage(pkg: String, todayStart: Long): Int
+
+    /** 今天某个 App 累计使用秒数 */
+    @Query("SELECT COALESCE(SUM(timeLimitSeconds), 0) FROM intent_sessions WHERE packageName = :pkg AND startTime >= :todayStart AND status IN ('COMPLETED', 'EXPIRED')")
+    suspend fun totalSecondsTodayByPackage(pkg: String, todayStart: Long): Int
+}
+
 data class AppCount(val packageName: String, val count: Int)

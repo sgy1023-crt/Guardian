@@ -13,11 +13,10 @@ import androidx.core.app.NotificationCompat
 import com.gangyi.guardian.MainActivity
 import com.gangyi.guardian.R
 import com.gangyi.guardian.data.MonitorPrefs
-import com.gangyi.guardian.data.MODE_FIXED
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.detect.ForegroundAppDetector
-import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
+import com.gangyi.guardian.overlay.OverlayContent
 import com.gangyi.guardian.overlay.OverlayController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -30,8 +29,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 守卫核心前台服务：常驻通知保活，协程每秒轮询前台 App，
- * 命中监控列表且过了冷却期则弹出停顿弹窗。
+ * 守卫核心前台服务：常驻通知保活，协程每秒轮询前台 App。
+ * 新机制 —— 意图声明 + 限时使用 + 到时自动退出：
+ * 1. 打开被监控 App → 弹出意图声明卡（填理由 + 选时长）
+ * 2. 填写完毕 → 记录会话，放行使用
+ * 3. 时间到 → 弹出回顾卡，用户选退出则回桌面
+ * 关键词触发（ClipboardWatcherService）继续沿用旧的提醒弹窗。
  */
 class MonitorService : Service() {
 
@@ -41,10 +44,12 @@ class MonitorService : Service() {
     private lateinit var repo: GuardianRepository
     private lateinit var overlay: OverlayController
     private lateinit var powerManager: PowerManager
+    private lateinit var notificationManager: NotificationManager
 
-    // Flow 常驻缓存，避免轮询线程每秒查一次数据库
-    @Volatile
-    private var monitoredPkgs: Set<String> = emptySet()
+    // Flow 常驻缓存
+    @Volatile private var monitoredPkgs: Set<String> = emptySet()
+    // 会话预期结束时间缓存（毫秒 timestamp），避免每次轮询查 DB
+    private val sessionEndMsByPkg = HashMap<String, Long>()
 
     override fun onCreate() {
         super.onCreate()
@@ -52,7 +57,11 @@ class MonitorService : Service() {
         repo = GuardianRepository(this)
         overlay = OverlayController.get(this)
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        startForeground(NOTIF_ID, buildNotification())
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        initNotificationChannel()
+        startForeground(NOTIF_ID, buildNotification(null))
+        // 服务启动时清掉所有残留的进行中会话（上次被杀可能留脏数据）
+        scope.launch { repo.expireAllActiveSessions() }
         scope.launch {
             repo.monitoredPackages.collect { monitoredPkgs = it.toSet() }
         }
@@ -66,11 +75,7 @@ class MonitorService : Service() {
     private fun startLoop() {
         if (loopJob?.isActive == true) return
         loopJob = scope.launch {
-            // 每个被监控 App 各自记一份"上次触发时间"，
-            // 这样冷却完全基于时间，离开/回来都不会丢冷却进度。
-            val lastTriggerAtByPkg = HashMap<String, Long>()
             while (isActive) {
-                // 息屏：不查询不弹窗，收起已有弹窗，降频省电
                 if (!powerManager.isInteractive) {
                     if (overlay.isShowing) {
                         withContext(Dispatchers.Main) {
@@ -85,20 +90,8 @@ class MonitorService : Service() {
                 val hit = pkg != null && pkg in monitoredPkgs && pkg != packageName
 
                 if (hit) {
-                    val now = System.currentTimeMillis()
-                    val cooldownMs = prefs.cooldownSeconds * 1000L
-                    val lastAt = lastTriggerAtByPkg[pkg] ?: 0L
-                    val freshTrigger = now - lastAt > cooldownMs
-                    if (freshTrigger && !overlay.isShowing) {
-                        lastTriggerAtByPkg[pkg!!] = now
-                        val reminder = pickReminder()
-                        withContext(Dispatchers.Main) {
-                            overlay.show(reminder, OverlayController.SOURCE_APP)
-                        }
-                        launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
-                    }
+                    handleMonitoredApp(pkg!!)
                 } else {
-                    // 离开被监控 App：收起自己弹的窗（不动关键词弹窗）。冷却时间不重置。
                     if (overlay.isShowing) {
                         withContext(Dispatchers.Main) {
                             overlay.dismiss(OverlayController.SOURCE_APP)
@@ -108,6 +101,129 @@ class MonitorService : Service() {
                 delay(POLL_INTERVAL_MS)
             }
         }
+    }
+
+    /** 核心决策：前台 App 命中监控列表时，根据是否有活跃会话决定弹什么。 */
+    private suspend fun handleMonitoredApp(pkg: String) {
+        val now = System.currentTimeMillis()
+
+        // 1. 检查是否有进行中的限时会话
+        val session = withContext(Dispatchers.IO) { repo.getActiveSession(pkg) }
+
+        if (session == null) {
+            // 无会话 → 弹出意图声明卡
+            if (!overlay.isShowing) {
+                val label = getAppLabel(pkg)
+                withContext(Dispatchers.Main) {
+                    overlay.show(
+                        OverlayContent.IntentCard(
+                            appLabel = label,
+                            appPackage = pkg,
+                            defaultTimeSeconds = prefs.defaultTimeLimitSeconds,
+                            onStart = { reason, seconds ->
+                                scope.launch {
+                                    val sid = repo.startSession(pkg, reason, seconds)
+                                    sessionEndMsByPkg[pkg] = now + seconds * 1000L
+                                    logTrigger(pkg, reason)
+                                    updateNotification(pkg, seconds)
+                                }
+                            },
+                            onCancel = {
+                                scope.launch {
+                                    repo.logTrigger(pkg, TriggerLog.TYPE_APP, "CANCELLED")
+                                }
+                            }
+                        ),
+                        OverlayController.SOURCE_APP
+                    )
+                }
+            }
+            return
+        }
+
+        // 2. 活跃会话存在 → 检查是否到时
+        val endMs = sessionEndMsByPkg[pkg] ?: run {
+            val calculated = session.startTime + session.timeLimitSeconds * 1000L
+            sessionEndMsByPkg[pkg] = calculated
+            calculated
+        }
+
+        if (now >= endMs) {
+            // 时间到了 → 弹出回顾卡
+            if (!overlay.isShowing) {
+                val label = getAppLabel(pkg)
+                val canExtend = session.extensionCount < prefs.maxExtensionCount
+                withContext(Dispatchers.Main) {
+                    overlay.show(
+                        OverlayContent.TimeUpCard(
+                            appLabel = label,
+                            reason = session.reason,
+                            remainingExtensions = if (canExtend) prefs.maxExtensionCount - session.extensionCount else 0,
+                            extensionSeconds = prefs.extensionSeconds,
+                            onDone = {
+                                scope.launch {
+                                    repo.finishSession(session.id)
+                                    sessionEndMsByPkg.remove(pkg)
+                                    goHome()
+                                }
+                            },
+                            onExtend = {
+                                scope.launch {
+                                    repo.extendSession(session.id, prefs.extensionSeconds)
+                                    sessionEndMsByPkg[pkg] = now + prefs.extensionSeconds * 1000L
+                                    updateNotification(pkg, prefs.extensionSeconds)
+                                }
+                            },
+                            onExit = {
+                                scope.launch {
+                                    repo.finishSession(session.id)
+                                    sessionEndMsByPkg.remove(pkg)
+                                    goHome()
+                                }
+                            }
+                        ),
+                        OverlayController.SOURCE_APP
+                    )
+                }
+            }
+        } else {
+            // 时间未到 → 放行，更新通知里的剩余时间
+            val remaining = ((endMs - now) / 1000L).toInt()
+            // 每 30 秒刷新一次通知，避免频繁更新
+            if (remaining % 30 == 0) {
+                updateNotification(pkg, remaining)
+            }
+        }
+    }
+
+    private fun getAppLabel(pkg: String): String = runCatching {
+        val pm = applicationContext.packageManager
+        val ai = pm.getApplicationInfo(pkg, 0)
+        pm.getApplicationLabel(ai).toString()
+    }.getOrDefault(pkg)
+
+    private suspend fun logTrigger(pkg: String, reason: String) {
+        repo.logTrigger(pkg, TriggerLog.TYPE_APP)
+    }
+
+    /** 回到桌面——用户选择退出时调用。 */
+    private fun goHome() {
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun updateNotification(pkg: String, remainingSeconds: Int) {
+        val label = getAppLabel(pkg)
+        val text = if (remainingSeconds > 60) {
+            "「$label」还剩 ${remainingSeconds / 60} 分钟"
+        } else {
+            "「$label」还剩 $remainingSeconds 秒"
+        }
+        val n = buildNotification(text)
+        notificationManager.notify(NOTIF_ID, n)
     }
 
     override fun onDestroy() {
@@ -125,34 +241,24 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    /** 按当前模式取提醒语：固定模式取不到时回退到随机。 */
-    private fun pickReminder(): String {
-        if (prefs.reminderMode == MODE_FIXED) {
-            val id = prefs.fixedReminderId
-            if (id >= 0) {
-                val fixed = repo.getReminderByIdSync(id)?.text
-                if (!fixed.isNullOrBlank()) return fixed
-            }
-        }
-        val list = repo.listRemindersSync()
-        return list.ifEmpty { DEFAULT_REMINDERS }.random()
-    }
-
-    private fun buildNotification(): Notification {
+    private fun initNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID, "守卫运行状态", NotificationManager.IMPORTANCE_LOW
             ).apply { description = "守卫正在后台守护你的专注" }
-            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(channel)
         }
+    }
+
+    /** 构建常驻通知。statusText 为 null 时显示默认文案，否则显示剩余时间。 */
+    private fun buildNotification(statusText: String?): Notification {
         val pi = android.app.PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
             android.app.PendingIntent.FLAG_IMMUTABLE
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("守卫运行中")
-            .setContentText("正在守护你的专注")
+            .setContentText(statusText ?: "正在守护你的专注")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pi)
             .setOngoing(true)
