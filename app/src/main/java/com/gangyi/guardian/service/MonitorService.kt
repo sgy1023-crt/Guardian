@@ -141,8 +141,8 @@ class MonitorService : Service() {
                 val label = getAppLabel(pkg)
                 val todayStart = getTodayStartMs()
 
-                // 每日配额检查
-                val limitMinutes = prefs.dailyLimitMinutes
+                // 每日配额检查（per-app 独立限额）
+                val limitMinutes = withContext(Dispatchers.IO) { repo.getAppDailyLimit(pkg) }
                 if (limitMinutes > 0) {
                     val usedSeconds = withContext(Dispatchers.IO) { repo.totalSecondsToday(pkg, todayStart) }
                     val usedMinutes = usedSeconds / 60

@@ -13,7 +13,7 @@ import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
         MonitoredApp::class, Keyword::class, Reminder::class,
         TriggerLog::class, IntentSession::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class GuardianDatabase : RoomDatabase() {
@@ -44,6 +44,12 @@ abstract class GuardianDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE monitored_apps ADD COLUMN dailyLimitMinutes INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): GuardianDatabase {
             return instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -51,7 +57,7 @@ abstract class GuardianDatabase : RoomDatabase() {
                     GuardianDatabase::class.java,
                     "guardian.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .addCallback(InitCallback())
                     .build()
                     .also { instance = it }

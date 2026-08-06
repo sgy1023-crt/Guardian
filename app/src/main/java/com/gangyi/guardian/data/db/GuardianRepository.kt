@@ -48,8 +48,21 @@ class GuardianRepository(context: Context) {
 
     suspend fun listMonitoredPackages(): List<String> = appDao.listPackages()
 
+    suspend fun listMonitoredApps(): List<MonitoredApp> = appDao.getAll()
+
+    suspend fun getMonitoredApp(pkg: String): MonitoredApp? = appDao.getByPackage(pkg)
+
     suspend fun addApp(pkg: String) { appDao.insert(MonitoredApp(pkg)) }
     suspend fun removeApp(pkg: String) { appDao.delete(pkg) }
+
+    /** 获取某 App 的独立每日限额（分钟），0 = 不限 */
+    suspend fun getAppDailyLimit(pkg: String): Int =
+        appDao.getByPackage(pkg)?.dailyLimitMinutes ?: 0
+
+    /** 设置某 App 的独立每日限额（分钟） */
+    suspend fun setAppDailyLimit(pkg: String, minutes: Int) {
+        appDao.updateDailyLimit(pkg, minutes)
+    }
 
     // ---- Keyword ----
     val keywords: Flow<List<String>>
