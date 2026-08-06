@@ -76,6 +76,31 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_DAILY_LIMIT_MINUTES, 0)
         set(value) = sp.edit().putInt(KEY_DAILY_LIMIT_MINUTES, value).apply()
 
+    /** 学习时段封锁是否开启 */
+    var studyBlockEnabled: Boolean
+        get() = sp.getBoolean(KEY_STUDY_BLOCK_ENABLED, false)
+        set(value) = sp.edit().putBoolean(KEY_STUDY_BLOCK_ENABLED, value).apply()
+
+    /** 学习时段开始：小时 (0-23)，默认 8 */
+    var studyBlockStartHour: Int
+        get() = sp.getInt(KEY_STUDY_BLOCK_START_HOUR, 8)
+        set(value) = sp.edit().putInt(KEY_STUDY_BLOCK_START_HOUR, value).apply()
+
+    /** 学习时段开始：分钟 (0-59)，默认 0 */
+    var studyBlockStartMinute: Int
+        get() = sp.getInt(KEY_STUDY_BLOCK_START_MINUTE, 0)
+        set(value) = sp.edit().putInt(KEY_STUDY_BLOCK_START_MINUTE, value).apply()
+
+    /** 学习时段结束：小时 (0-23)，默认 12 */
+    var studyBlockEndHour: Int
+        get() = sp.getInt(KEY_STUDY_BLOCK_END_HOUR, 12)
+        set(value) = sp.edit().putInt(KEY_STUDY_BLOCK_END_HOUR, value).apply()
+
+    /** 学习时段结束：分钟 (0-59)，默认 0 */
+    var studyBlockEndMinute: Int
+        get() = sp.getInt(KEY_STUDY_BLOCK_END_MINUTE, 0)
+        set(value) = sp.edit().putInt(KEY_STUDY_BLOCK_END_MINUTE, value).apply()
+
     private companion object {
         const val KEY_ENABLED = "service_enabled"
         const val KEY_COOLDOWN = "cooldown_seconds"
@@ -90,6 +115,11 @@ class MonitorPrefs(context: Context) {
         const val KEY_EXTENSION_SECONDS = "extension_seconds"
         const val KEY_MAX_EXTENSIONS = "max_extensions"
         const val KEY_DAILY_LIMIT_MINUTES = "daily_limit_minutes"
+        const val KEY_STUDY_BLOCK_ENABLED = "study_block_enabled"
+        const val KEY_STUDY_BLOCK_START_HOUR = "study_block_start_hour"
+        const val KEY_STUDY_BLOCK_START_MINUTE = "study_block_start_minute"
+        const val KEY_STUDY_BLOCK_END_HOUR = "study_block_end_hour"
+        const val KEY_STUDY_BLOCK_END_MINUTE = "study_block_end_minute"
     }
 }
 

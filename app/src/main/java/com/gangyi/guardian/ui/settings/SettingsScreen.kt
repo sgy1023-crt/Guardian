@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -74,6 +75,11 @@ fun SettingsScreen(onBack: () -> Unit) {
     var extensionSecs by remember { mutableFloatStateOf(prefs.extensionSeconds.toFloat()) }
     var maxExtensions by remember { mutableFloatStateOf(prefs.maxExtensionCount.toFloat()) }
     var dailyLimitMin by remember { mutableFloatStateOf(prefs.dailyLimitMinutes.toFloat()) }
+    var studyEnabled by remember { mutableStateOf(prefs.studyBlockEnabled) }
+    var studyStartH by remember { mutableFloatStateOf(prefs.studyBlockStartHour.toFloat()) }
+    var studyStartM by remember { mutableFloatStateOf(prefs.studyBlockStartMinute.toFloat()) }
+    var studyEndH by remember { mutableFloatStateOf(prefs.studyBlockEndHour.toFloat()) }
+    var studyEndM by remember { mutableFloatStateOf(prefs.studyBlockEndMinute.toFloat()) }
     var exporting by remember { mutableStateOf(false) }
     var encrypted by remember { mutableStateOf(prefs.keywordsEncrypted) }
     var showSetPwd by remember { mutableStateOf(false) }
@@ -336,6 +342,166 @@ fun SettingsScreen(onBack: () -> Unit) {
                     "每个 App 每天能用的总时长；0 = 不限，可设 5~180 分钟",
                     fontSize = 12.sp, color = GuardianTextFaint
                 )
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+
+        // 学习时段封锁
+        Text("学习封锁", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
+        Spacer(Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("学习时段封锁", fontSize = 15.sp, color = GuardianText)
+                        Text(
+                            "学习时间内禁止所有被监控 App",
+                            fontSize = 12.sp, color = GuardianTextFaint
+                        )
+                    }
+                    Switch(
+                        checked = studyEnabled,
+                        onCheckedChange = {
+                            studyEnabled = it
+                            prefs.studyBlockEnabled = it
+                        },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = GuardianAccent,
+                            checkedTrackColor = GuardianAccent.copy(alpha = 0.4f)
+                        )
+                    )
+                }
+
+                if (studyEnabled) {
+                    Spacer(Modifier.height(16.dp))
+
+                    // 开始时间
+                    Text("开始时间", fontSize = 13.sp, color = GuardianTextFaint)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "${studyStartH.toInt().toString().padStart(2, '0')}:${studyStartM.toInt().toString().padStart(2, '0')}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GuardianAccent,
+                            modifier = Modifier.width(56.dp)
+                        )
+                        Text("时", fontSize = 11.sp, color = GuardianTextFaint, modifier = Modifier.width(20.dp))
+                        Slider(
+                            value = studyStartH,
+                            onValueChange = { studyStartH = it },
+                            onValueChangeFinished = { prefs.studyBlockStartHour = studyStartH.toInt() },
+                            valueRange = 0f..23f,
+                            steps = 22,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = GuardianAccent,
+                                activeTrackColor = GuardianAccent,
+                                inactiveTrackColor = GuardianBg
+                            )
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Spacer(Modifier.width(56.dp))
+                        Text("分", fontSize = 11.sp, color = GuardianTextFaint, modifier = Modifier.width(20.dp))
+                        Slider(
+                            value = studyStartM,
+                            onValueChange = { studyStartM = it },
+                            onValueChangeFinished = { prefs.studyBlockStartMinute = studyStartM.toInt() },
+                            valueRange = 0f..55f,
+                            steps = 10, // 步长 5 分钟
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = GuardianAccent,
+                                activeTrackColor = GuardianAccent,
+                                inactiveTrackColor = GuardianBg
+                            )
+                        )
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // 结束时间
+                    Text("结束时间", fontSize = 13.sp, color = GuardianTextFaint)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "${studyEndH.toInt().toString().padStart(2, '0')}:${studyEndM.toInt().toString().padStart(2, '0')}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GuardianAccent,
+                            modifier = Modifier.width(56.dp)
+                        )
+                        Text("时", fontSize = 11.sp, color = GuardianTextFaint, modifier = Modifier.width(20.dp))
+                        Slider(
+                            value = studyEndH,
+                            onValueChange = { studyEndH = it },
+                            onValueChangeFinished = { prefs.studyBlockEndHour = studyEndH.toInt() },
+                            valueRange = 0f..23f,
+                            steps = 22,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = GuardianAccent,
+                                activeTrackColor = GuardianAccent,
+                                inactiveTrackColor = GuardianBg
+                            )
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Spacer(Modifier.width(56.dp))
+                        Text("分", fontSize = 11.sp, color = GuardianTextFaint, modifier = Modifier.width(20.dp))
+                        Slider(
+                            value = studyEndM,
+                            onValueChange = { studyEndM = it },
+                            onValueChangeFinished = { prefs.studyBlockEndMinute = studyEndM.toInt() },
+                            valueRange = 0f..55f,
+                            steps = 10,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = GuardianAccent,
+                                activeTrackColor = GuardianAccent,
+                                inactiveTrackColor = GuardianBg
+                            )
+                        )
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    // 跨夜提示
+                    val startTotal = studyStartH.toInt() * 60 + studyStartM.toInt()
+                    val endTotal = studyEndH.toInt() * 60 + studyEndM.toInt()
+                    if (startTotal >= endTotal) {
+                        Text(
+                            "⚠ 检测到跨夜时段（如 22:00~06:00），确认正确吗？",
+                            fontSize = 12.sp,
+                            color = GuardianAccent
+                        )
+                    } else {
+                        Text(
+                            "时段内所有监控 App 将被完全封锁，建议配合番茄钟使用",
+                            fontSize = 12.sp, color = GuardianTextFaint
+                        )
+                    }
+                }
             }
         }
 

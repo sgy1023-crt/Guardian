@@ -107,6 +107,29 @@ class MonitorService : Service() {
     private suspend fun handleMonitoredApp(pkg: String) {
         val now = System.currentTimeMillis()
 
+        // 0. 学习时段检查（最高优先级——学习时间禁止一切）
+        if (prefs.studyBlockEnabled && isInStudyBlock()) {
+            if (!overlay.isShowing) {
+                val label = getAppLabel(pkg)
+                val remaining = remainingStudyMinutes()
+                val startStr = timeStr(prefs.studyBlockStartHour, prefs.studyBlockStartMinute)
+                val endStr = timeStr(prefs.studyBlockEndHour, prefs.studyBlockEndMinute)
+                withContext(Dispatchers.Main) {
+                    overlay.show(
+                        OverlayContent.StudyBlockCard(
+                            appLabel = label,
+                            startTime = startStr,
+                            endTime = endStr,
+                            remainingMinutes = remaining,
+                            onExit = { goHome() }
+                        ),
+                        OverlayController.SOURCE_APP
+                    )
+                }
+            }
+            return
+        }
+
         // 1. 检查是否有进行中的限时会话
         val session = withContext(Dispatchers.IO) { repo.getActiveSession(pkg) }
 
@@ -290,6 +313,41 @@ class MonitorService : Service() {
             .setOngoing(true)
             .build()
     }
+
+    /** 当前时间是否处于学习时段内。支持跨夜（如 22:00~06:00）。 */
+    private fun isInStudyBlock(): Boolean {
+        val cal = java.util.Calendar.getInstance()
+        val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val startMinutes = prefs.studyBlockStartHour * 60 + prefs.studyBlockStartMinute
+        val endMinutes = prefs.studyBlockEndHour * 60 + prefs.studyBlockEndMinute
+
+        return if (startMinutes <= endMinutes) {
+            // 当天内：如 08:00 ~ 12:00
+            nowMinutes in startMinutes..<endMinutes
+        } else {
+            // 跨夜：如 22:00 ~ 06:00
+            nowMinutes >= startMinutes || nowMinutes < endMinutes
+        }
+    }
+
+    /** 距离学习时段结束还有多少分钟（0 表示即将结束） */
+    private fun remainingStudyMinutes(): Int {
+        val cal = java.util.Calendar.getInstance()
+        val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val endMinutes = prefs.studyBlockEndHour * 60 + prefs.studyBlockEndMinute
+
+        val startMinutes = prefs.studyBlockStartHour * 60 + prefs.studyBlockStartMinute
+        return if (startMinutes <= endMinutes) {
+            endMinutes - nowMinutes
+        } else {
+            // 跨夜：如果当前在 start~24:00，距离结束 = (24*60 - nowMinutes) + endMinutes
+            if (nowMinutes >= startMinutes) (24 * 60 - nowMinutes) + endMinutes
+            else endMinutes - nowMinutes
+        }.coerceAtLeast(0)
+    }
+
+    private fun timeStr(hour: Int, minute: Int): String =
+        "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
 
     /** 冷却递增强制等待：打开次数越多，等待越久。 */
     private fun escalationWaitSeconds(openCount: Int): Int = when {

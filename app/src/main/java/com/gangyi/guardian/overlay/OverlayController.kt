@@ -44,6 +44,15 @@ sealed class OverlayContent {
         val limitMinutes: Int,
         val onExit: () -> Unit
     ) : OverlayContent()
+
+    /** 学习时段封锁卡：学习时间内完全禁止打开监控 App */
+    data class StudyBlockCard(
+        val appLabel: String,
+        val startTime: String,      // 如 "08:00"
+        val endTime: String,        // 如 "12:00"
+        val remainingMinutes: Int,  // 距离学习时段结束还有几分钟
+        val onExit: () -> Unit
+    ) : OverlayContent()
 }
 
 /**
@@ -117,6 +126,16 @@ class OverlayController private constructor(context: Context) {
                             appLabel = content.appLabel,
                             usedMinutes = content.usedMinutes,
                             limitMinutes = content.limitMinutes,
+                            onExit = {
+                                dismiss(source)
+                                content.onExit()
+                            }
+                        )
+                        is OverlayContent.StudyBlockCard -> StudyBlockCardContent(
+                            appLabel = content.appLabel,
+                            startTime = content.startTime,
+                            endTime = content.endTime,
+                            remainingMinutes = content.remainingMinutes,
                             onExit = {
                                 dismiss(source)
                                 content.onExit()
