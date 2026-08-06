@@ -11,6 +11,7 @@ import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.data.MODE_FIXED
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
+import com.gangyi.guardian.overlay.OverlayContent
 import com.gangyi.guardian.overlay.OverlayController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -150,7 +151,7 @@ class ClipboardWatcherService : AccessibilityService() {
         var shown = false
         withContextMain {
             if (!overlay.isShowing) {
-                overlay.show(message, OverlayController.SOURCE_KEYWORD)
+                overlay.show(OverlayContent.Reminder(message), OverlayController.SOURCE_KEYWORD)
                 shown = true
             }
         }
