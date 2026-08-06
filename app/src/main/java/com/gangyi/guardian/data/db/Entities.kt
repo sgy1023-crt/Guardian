@@ -6,7 +6,9 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "monitored_apps")
 data class MonitoredApp(
     @PrimaryKey val packageName: String,
-    val addedAt: Long = System.currentTimeMillis()
+    val addedAt: Long = System.currentTimeMillis(),
+    /** 该 App 独立每日使用时长上限（分钟），0 = 不限制，默认 0 */
+    val dailyLimitMinutes: Int = 0
 )
 
 @Entity(tableName = "keywords")

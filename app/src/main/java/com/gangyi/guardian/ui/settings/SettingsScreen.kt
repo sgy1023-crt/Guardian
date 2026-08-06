@@ -25,9 +25,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.gangyi.guardian.data.MonitorPrefs
+import com.gangyi.guardian.data.StudyBlock
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.ui.theme.GuardianAccent
 import com.gangyi.guardian.ui.theme.GuardianBg
@@ -73,7 +76,12 @@ fun SettingsScreen(onBack: () -> Unit) {
     var defaultTimeLimit by remember { mutableFloatStateOf(prefs.defaultTimeLimitSeconds.toFloat()) }
     var extensionSecs by remember { mutableFloatStateOf(prefs.extensionSeconds.toFloat()) }
     var maxExtensions by remember { mutableFloatStateOf(prefs.maxExtensionCount.toFloat()) }
-    var dailyLimitMin by remember { mutableFloatStateOf(prefs.dailyLimitMinutes.toFloat()) }
+    var studyEnabled by remember { mutableStateOf(prefs.studyBlockEnabled) }
+    val studyBlocks = remember { androidx.compose.runtime.mutableStateListOf<StudyBlock>() }
+    // 初始化：从 prefs 加载已有时段
+    LaunchedEffect(Unit) { studyBlocks.addAll(prefs.studyBlocks) }
+    // 每次修改后同步到 prefs
+    fun syncStudyBlocks() { prefs.studyBlocks = studyBlocks.toList() }
     var exporting by remember { mutableStateOf(false) }
     var encrypted by remember { mutableStateOf(prefs.keywordsEncrypted) }
     var showSetPwd by remember { mutableStateOf(false) }
@@ -302,9 +310,11 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(20.dp))
 
-        // 每日上限
+        // 学习时段封锁（多时段）
+        Text("学习封锁", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
+        Spacer(Modifier.height(8.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -314,28 +324,182 @@ fun SettingsScreen(onBack: () -> Unit) {
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("单 App 每日限额", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text(
-                        if (dailyLimitMin.toInt() == 0) "不限" else "${dailyLimitMin.toInt()} 分钟",
-                        fontSize = 14.sp, color = GuardianAccent
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("学习时段封锁", fontSize = 15.sp, color = GuardianText)
+                        Text(
+                            "学习时间内禁止所有被监控 App",
+                            fontSize = 12.sp, color = GuardianTextFaint
+                        )
+                    }
+                    Switch(
+                        checked = studyEnabled,
+                        onCheckedChange = {
+                            studyEnabled = it
+                            prefs.studyBlockEnabled = it
+                        },
+                        colors = androidx.compose.material3.SwitchDefaults.colors(
+                            checkedThumbColor = GuardianAccent,
+                            checkedTrackColor = GuardianAccent.copy(alpha = 0.4f)
+                        )
                     )
                 }
-                Slider(
-                    value = dailyLimitMin,
-                    onValueChange = { dailyLimitMin = it },
-                    onValueChangeFinished = { prefs.dailyLimitMinutes = dailyLimitMin.toInt() },
-                    valueRange = 0f..180f,
-                    steps = 35,
-                    colors = SliderDefaults.colors(
-                        thumbColor = GuardianAccent,
-                        activeTrackColor = GuardianAccent,
-                        inactiveTrackColor = GuardianBg
+
+                if (studyEnabled) {
+                    Spacer(Modifier.height(16.dp))
+
+                    // 已有时段列表
+                    studyBlocks.forEachIndexed { idx, block ->
+                        val blockIdx = idx // capture for callbacks
+                        // 每块用一个 Box 包裹，加分隔和删除按钮
+                        if (idx > 0) {
+                            Spacer(Modifier.height(8.dp))
+                            Box(
+                                modifier = Modifier.fillMaxWidth().height(1.dp)
+                                    .background(GuardianBg)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "时段 ${idx + 1}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = GuardianAccent,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = {
+                                studyBlocks.removeAt(blockIdx)
+                                syncStudyBlocks()
+                            }) {
+                                Text("删除", fontSize = 12.sp, color = GuardianAccent)
+                            }
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+
+                        // 开始时间
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                block.startTimeStr(),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GuardianAccent,
+                                modifier = Modifier.width(48.dp)
+                            )
+                            Text(" → ", fontSize = 12.sp, color = GuardianTextFaint)
+                            Text(
+                                block.endTimeStr(),
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GuardianAccent
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+
+                        // 开始时
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("始时", fontSize = 10.sp, color = GuardianTextFaint, modifier = Modifier.width(32.dp))
+                            Slider(
+                                value = block.startHour.toFloat(),
+                                onValueChange = {
+                                    studyBlocks[blockIdx] = block.copy(startHour = it.toInt())
+                                    syncStudyBlocks()
+                                },
+                                valueRange = 0f..23f,
+                                steps = 22,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = GuardianAccent,
+                                    activeTrackColor = GuardianAccent,
+                                    inactiveTrackColor = GuardianBg
+                                )
+                            )
+                        }
+                        // 开始分
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("始分", fontSize = 10.sp, color = GuardianTextFaint, modifier = Modifier.width(32.dp))
+                            Slider(
+                                value = block.startMinute.toFloat(),
+                                onValueChange = {
+                                    studyBlocks[blockIdx] = block.copy(startMinute = it.toInt())
+                                    syncStudyBlocks()
+                                },
+                                valueRange = 0f..55f,
+                                steps = 10,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = GuardianAccent,
+                                    activeTrackColor = GuardianAccent,
+                                    inactiveTrackColor = GuardianBg
+                                )
+                            )
+                        }
+                        // 结束时
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("终时", fontSize = 10.sp, color = GuardianTextFaint, modifier = Modifier.width(32.dp))
+                            Slider(
+                                value = block.endHour.toFloat(),
+                                onValueChange = {
+                                    studyBlocks[blockIdx] = block.copy(endHour = it.toInt())
+                                    syncStudyBlocks()
+                                },
+                                valueRange = 0f..23f,
+                                steps = 22,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = GuardianAccent,
+                                    activeTrackColor = GuardianAccent,
+                                    inactiveTrackColor = GuardianBg
+                                )
+                            )
+                        }
+                        // 结束分
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("终分", fontSize = 10.sp, color = GuardianTextFaint, modifier = Modifier.width(32.dp))
+                            Slider(
+                                value = block.endMinute.toFloat(),
+                                onValueChange = {
+                                    studyBlocks[blockIdx] = block.copy(endMinute = it.toInt())
+                                    syncStudyBlocks()
+                                },
+                                valueRange = 0f..55f,
+                                steps = 10,
+                                modifier = Modifier.weight(1f),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = GuardianAccent,
+                                    activeTrackColor = GuardianAccent,
+                                    inactiveTrackColor = GuardianBg
+                                )
+                            )
+                        }
+
+                        // 跨夜提示
+                        if (block.startTotalMinutes >= block.endTotalMinutes) {
+                            Text("⚠ 跨夜时段", fontSize = 11.sp, color = GuardianAccent)
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // 添加新时段按钮
+                    if (studyBlocks.size < 5) {
+                        TextButton(onClick = {
+                            // 默认添加一个 14:00-18:00 的时段
+                            studyBlocks.add(StudyBlock(startHour = 14, startMinute = 0, endHour = 18, endMinute = 0))
+                            syncStudyBlocks()
+                        }) {
+                            Text("＋ 添加时段（${studyBlocks.size}/5）", fontSize = 13.sp, color = GuardianAccent)
+                        }
+                    } else {
+                        Text("已达上限 5 个时段", fontSize = 12.sp, color = GuardianTextFaint)
+                    }
+
+                    Text(
+                        "可分别设置上午/下午/晚上多个时段；支持跨夜（如 22:00~06:00）",
+                        fontSize = 11.sp, color = GuardianTextFaint
                     )
-                )
-                Text(
-                    "每个 App 每天能用的总时长；0 = 不限，可设 5~180 分钟",
-                    fontSize = 12.sp, color = GuardianTextFaint
-                )
+                }
             }
         }
 

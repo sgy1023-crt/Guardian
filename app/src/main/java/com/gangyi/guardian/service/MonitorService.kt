@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.gangyi.guardian.MainActivity
 import com.gangyi.guardian.R
 import com.gangyi.guardian.data.MonitorPrefs
+import com.gangyi.guardian.data.StudyBlock
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.detect.ForegroundAppDetector
@@ -107,6 +108,30 @@ class MonitorService : Service() {
     private suspend fun handleMonitoredApp(pkg: String) {
         val now = System.currentTimeMillis()
 
+        // 0. 学习时段检查（最高优先级——学习时间禁止一切）
+        if (prefs.studyBlockEnabled) {
+            val activeBlock = findActiveStudyBlock()
+            if (activeBlock != null) {
+                if (!overlay.isShowing) {
+                    val label = getAppLabel(pkg)
+                    val remaining = remainingStudyMinutes(activeBlock)
+                    withContext(Dispatchers.Main) {
+                        overlay.show(
+                            OverlayContent.StudyBlockCard(
+                                appLabel = label,
+                                startTime = activeBlock.startTimeStr(),
+                                endTime = activeBlock.endTimeStr(),
+                                remainingMinutes = remaining,
+                                onExit = { goHome() }
+                            ),
+                            OverlayController.SOURCE_APP
+                        )
+                    }
+                }
+                return
+            }
+        }
+
         // 1. 检查是否有进行中的限时会话
         val session = withContext(Dispatchers.IO) { repo.getActiveSession(pkg) }
 
@@ -116,8 +141,8 @@ class MonitorService : Service() {
                 val label = getAppLabel(pkg)
                 val todayStart = getTodayStartMs()
 
-                // 每日配额检查
-                val limitMinutes = prefs.dailyLimitMinutes
+                // 每日配额检查（per-app 独立限额）
+                val limitMinutes = withContext(Dispatchers.IO) { repo.getAppDailyLimit(pkg) }
                 if (limitMinutes > 0) {
                     val usedSeconds = withContext(Dispatchers.IO) { repo.totalSecondsToday(pkg, todayStart) }
                     val usedMinutes = usedSeconds / 60
@@ -289,6 +314,39 @@ class MonitorService : Service() {
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
+    }
+
+    /** 遍历所有学习时段，返回当前命中的第一个时段（null = 不在任何学习时段内）。支持跨夜。 */
+    private fun findActiveStudyBlock(): StudyBlock? {
+        val cal = java.util.Calendar.getInstance()
+        val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        for (block in prefs.studyBlocks) {
+            val start = block.startTotalMinutes
+            val end = block.endTotalMinutes
+            val hit = if (start <= end) {
+                nowMinutes in start..<end
+            } else {
+                // 跨夜：如 22:00 ~ 06:00
+                nowMinutes >= start || nowMinutes < end
+            }
+            if (hit) return block
+        }
+        return null
+    }
+
+    /** 距离指定学习时段结束还有多少分钟 */
+    private fun remainingStudyMinutes(block: StudyBlock): Int {
+        val cal = java.util.Calendar.getInstance()
+        val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val start = block.startTotalMinutes
+        val end = block.endTotalMinutes
+        return if (start <= end) {
+            end - nowMinutes
+        } else {
+            // 跨夜
+            if (nowMinutes >= start) (24 * 60 - nowMinutes) + end
+            else end - nowMinutes
+        }.coerceAtLeast(0)
     }
 
     /** 冷却递增强制等待：打开次数越多，等待越久。 */

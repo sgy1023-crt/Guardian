@@ -11,6 +11,12 @@ interface MonitoredAppDao {
     @Query("SELECT * FROM monitored_apps ORDER BY addedAt DESC")
     fun observeAll(): Flow<List<MonitoredApp>>
 
+    @Query("SELECT * FROM monitored_apps ORDER BY addedAt DESC")
+    suspend fun getAll(): List<MonitoredApp>
+
+    @Query("SELECT * FROM monitored_apps WHERE packageName = :pkg LIMIT 1")
+    suspend fun getByPackage(pkg: String): MonitoredApp?
+
     @Query("SELECT packageName FROM monitored_apps")
     suspend fun listPackages(): List<String>
 
@@ -19,6 +25,9 @@ interface MonitoredAppDao {
 
     @Query("DELETE FROM monitored_apps WHERE packageName = :pkg")
     suspend fun delete(pkg: String)
+
+    @Query("UPDATE monitored_apps SET dailyLimitMinutes = :minutes WHERE packageName = :pkg")
+    suspend fun updateDailyLimit(pkg: String, minutes: Int)
 }
 
 @Dao

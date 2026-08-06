@@ -87,6 +87,17 @@ Android 不允许第三方应用杀死其他应用进程。使用 Home Intent �
 
 `ClipboardWatcherService` 的关键词检测继续使用 `OverlayContent.Reminder`（旧版简单弹窗），本次改动不影响该路径。
 
+## P2：学习时段全封锁（已完成）
+
+设定每日学习时段（如 08:00~12:00、14:00~18:00），时段内**所有被监控 App 完全封锁**。
+
+- `MonitorPrefs` 新增 5 个设置：`studyBlockEnabled` + 开始/结束(小时 + 分钟)
+- `MonitorService.isInStudyBlock()` 判断当前是否在学习时段内，**支持跨夜**（如 22:00~06:00）
+- `MonitorService.remainingStudyMinutes()` 计算距学习时段结束还有多少分钟
+- 学习时段检查是 `handleMonitoredApp()` 的**第 0 步**（最高优先级）——命中后直接弹封锁卡，跳过每日配额、活跃会话、意图声明等所有后续逻辑
+- `StudyBlockCardContent` 显示：脉冲动画 + 时段信息 + 距离结束倒计时 + "回去学习"按钮
+- SettingsScreen 新增"学习封锁"区块：Switch 开关 + 4 条滑块分别调节开始/结束的时分，自动检测跨夜并提示
+
 ## P1：单 App 全天时长上限（已完成）
 
 每个被监控 App 可设每日配额（0~180 分钟，0 = 不限）。
