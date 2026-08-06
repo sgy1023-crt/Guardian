@@ -111,15 +111,19 @@ class MonitorService : Service() {
         val session = withContext(Dispatchers.IO) { repo.getActiveSession(pkg) }
 
         if (session == null) {
-            // 无会话 → 弹出意图声明卡
+            // 无会话 → 弹出意图声明卡（带冷却递增强制等待）
             if (!overlay.isShowing) {
                 val label = getAppLabel(pkg)
+                val todayStart = getTodayStartMs()
+                val openCount = withContext(Dispatchers.IO) { repo.countTodaySessions(pkg, todayStart) }
+                val forcedWait = escalationWaitSeconds(openCount)
                 withContext(Dispatchers.Main) {
                     overlay.show(
                         OverlayContent.IntentCard(
                             appLabel = label,
                             appPackage = pkg,
                             defaultTimeSeconds = prefs.defaultTimeLimitSeconds,
+                            forcedWaitSeconds = forcedWait,
                             onStart = { reason, seconds ->
                                 scope.launch {
                                     val sid = repo.startSession(pkg, reason, seconds)
@@ -263,6 +267,25 @@ class MonitorService : Service() {
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
+    }
+
+    /** 冷却递增强制等待：打开次数越多，等待越久。 */
+    private fun escalationWaitSeconds(openCount: Int): Int = when {
+        openCount <= 0 -> 0
+        openCount == 1 -> 10
+        openCount == 2 -> 30
+        openCount == 3 -> 60
+        else -> 180 // 4+
+    }
+
+    /** 今天 00:00:00.000 的时间戳 */
+    private fun getTodayStartMs(): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
     }
 
     companion object {

@@ -26,11 +26,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -60,6 +62,7 @@ private val TIME_PRESETS = listOf(
 fun IntentCardContent(
     appLabel: String,
     defaultTimeSeconds: Int,
+    forcedWaitSeconds: Int = 0,
     onStart: (reason: String, timeLimitSeconds: Int) -> Unit,
     onCancel: () -> Unit
 ) {
@@ -69,6 +72,17 @@ fun IntentCardContent(
     var customMinutes by remember { mutableStateOf("") }
     var showCustom by remember { mutableStateOf(false) }
     var reasonError by remember { mutableStateOf(false) }
+
+    // 冷却递增强制等待倒计时
+    var cooldownRemaining by remember { mutableIntStateOf(forcedWaitSeconds) }
+    val inCooldown = cooldownRemaining > 0
+
+    LaunchedEffect(Unit) {
+        while (cooldownRemaining > 0) {
+            delay(1000L)
+            cooldownRemaining--
+        }
+    }
 
     val effectiveSeconds = if (showCustom) {
         (customMinutes.toIntOrNull() ?: 0) * 60
@@ -83,7 +97,7 @@ fun IntentCardContent(
             reasonError = true
             return
         }
-        val secs = effectiveSeconds.coerceIn(60, 7200) // 1 分钟 ~ 2 小时
+        val secs = effectiveSeconds.coerceIn(60, 7200)
         onStart(r, secs)
     }
 
@@ -119,18 +133,51 @@ fun IntentCardContent(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(8.dp))
+            if (inCooldown) {
+                // ═══ 冷却倒计时提示 ═══
+                Spacer(Modifier.height(16.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(GuardianBg, RoundedCornerShape(14.dp))
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "你今天已经打开它好几次了",
+                        fontSize = 14.sp,
+                        color = GuardianTextDim,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "$cooldownRemaining",
+                        fontSize = 52.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GuardianAccent
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "秒后可以填写理由",
+                        fontSize = 13.sp,
+                        color = GuardianTextFaint
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+            } else {
+                Spacer(Modifier.height(8.dp))
 
-            Text(
-                text = "先想清楚：为什么？用多久？",
-                fontSize = 14.sp,
-                color = GuardianTextDim,
-                textAlign = TextAlign.Center
-            )
+                Text(
+                    text = "先想清楚：为什么？用多久？",
+                    fontSize = 14.sp,
+                    color = GuardianTextDim,
+                    textAlign = TextAlign.Center
+                )
 
-            Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(24.dp))
+            }
 
-            // 理由输入
+            // 理由输入（冷却期间禁用）
             OutlinedTextField(
                 value = reason,
                 onValueChange = { reason = it; reasonError = false },
@@ -139,11 +186,12 @@ fun IntentCardContent(
                 },
                 label = { Text("打开理由") },
                 isError = reasonError,
+                enabled = !inCooldown,
                 supportingText = if (reasonError) {
                     { Text("理由最少 3 个字，请诚实地写") }
-                } else {
+                } else if (!inCooldown) {
                     { Text("${reason.length}/3 字最少 · 对自己诚实") }
-                },
+                } else null,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
@@ -164,7 +212,7 @@ fun IntentCardContent(
 
             Spacer(Modifier.height(20.dp))
 
-            // 时长选择
+            // 时长选择（冷却期间禁用）
             Text(
                 "使用时长",
                 fontSize = 13.sp,
@@ -186,7 +234,7 @@ fun IntentCardContent(
                                 if (isSelected) GuardianAccent else GuardianBg,
                                 RoundedCornerShape(10.dp)
                             )
-                            .clickable {
+                            .clickable(enabled = !inCooldown) {
                                 showCustom = false
                                 selectedSeconds = secs
                             }
@@ -218,7 +266,7 @@ fun IntentCardContent(
                             if (showCustom) GuardianAccent else GuardianBg,
                             RoundedCornerShape(10.dp)
                         )
-                        .clickable { showCustom = true }
+                        .clickable(enabled = !inCooldown) { showCustom = true }
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
@@ -234,6 +282,7 @@ fun IntentCardContent(
                         onValueChange = { customMinutes = it.filter { c -> c.isDigit() } },
                         placeholder = { Text("分钟") },
                         singleLine = true,
+                        enabled = !inCooldown,
                         modifier = Modifier.weight(1f).height(48.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = GuardianText,
@@ -248,10 +297,10 @@ fun IntentCardContent(
 
             Spacer(Modifier.height(24.dp))
 
-            // 操作按钮
+            // 操作按钮（冷却期间禁用"开始使用"）
             Button(
                 onClick = { doStart() },
-                enabled = canStart,
+                enabled = canStart && !inCooldown,
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = GuardianSuccess,
@@ -260,18 +309,20 @@ fun IntentCardContent(
                 modifier = Modifier.fillMaxWidth().height(50.dp)
             ) {
                 Text(
-                    text = if (effectiveSeconds >= 60)
-                        "开始使用（${formatSeconds(effectiveSeconds)}）"
-                    else
-                        "请选择使用时长",
+                    text = when {
+                        inCooldown -> "冷静 ${cooldownRemaining}s…"
+                        effectiveSeconds >= 60 -> "开始使用（${formatSeconds(effectiveSeconds)}）"
+                        else -> "请选择使用时长"
+                    },
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (canStart) Color.Black else GuardianTextDim
+                    color = if (canStart && !inCooldown) Color.Black else GuardianTextDim
                 )
             }
 
             Spacer(Modifier.height(10.dp))
 
+            // "还是算了"在冷却期间仍可用——随时可以放弃
             OutlinedButton(
                 onClick = onCancel,
                 shape = RoundedCornerShape(14.dp),

@@ -87,13 +87,28 @@ Android 不允许第三方应用杀死其他应用进程。使用 Home Intent �
 
 `ClipboardWatcherService` 的关键词检测继续使用 `OverlayContent.Reminder`（旧版简单弹窗），本次改动不影响该路径。
 
-## 后续计划
+## P3：冷却递增（已完成）
 
-本次提交是 P0 基础机制，后续可在不改变数据模型的前提下叠加：
+打开同一 App 越频繁，意图声明卡强制等待越久：
+
+| 今日已打开次数 | 强制等待 |
+|--------------|---------|
+| 0 次 | 0 秒（直接填） |
+| 1 次 | 10 秒 |
+| 2 次 | 30 秒 |
+| 3 次 | 60 秒 |
+| 4 次及以上 | 180 秒（3 分钟） |
+
+实现方式：
+- `MonitorService.escalationWaitSeconds()` 根据 `countTodaySessions()` 的返回值查表
+- `IntentCardContent` 通过 `forcedWaitSeconds` 参数接收，`LaunchedEffect` 驱动倒计时
+- 冷却期间：理由输入框、时长按钮、开始按钮全部 `enabled = false`，显示大号秒数倒计时
+- "还是算了"按钮在冷却期间依然可用
+
+## 后续计划
 
 - **P1** 单 App 全天时长上限
 - **P2** 学习时段全封锁
-- **P3** 冷却递增（频繁重开等更久）
 - **P4** 意图回顾日志（时间线页面）
 - 番茄钟联动
 - 每周自律报告

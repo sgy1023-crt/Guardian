@@ -20,6 +20,8 @@ sealed class OverlayContent {
         val appLabel: String,
         val appPackage: String,
         val defaultTimeSeconds: Int,
+        /** 冷却递增强制等待秒数。>0 时表单先禁用，倒计时结束后才能交互 */
+        val forcedWaitSeconds: Int = 0,
         val onStart: (reason: String, timeLimitSeconds: Int) -> Unit,
         val onCancel: () -> Unit
     ) : OverlayContent()
@@ -75,6 +77,7 @@ class OverlayController private constructor(context: Context) {
                         is OverlayContent.IntentCard -> IntentCardContent(
                             appLabel = content.appLabel,
                             defaultTimeSeconds = content.defaultTimeSeconds,
+                            forcedWaitSeconds = content.forcedWaitSeconds,
                             onStart = { reason, seconds ->
                                 dismiss(source)
                                 content.onStart(reason, seconds)
