@@ -71,6 +71,11 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_MAX_EXTENSIONS, 2)
         set(value) = sp.edit().putInt(KEY_MAX_EXTENSIONS, value).apply()
 
+    /** 单 App 每日使用时长上限（分钟），0 = 不限制，默认 0 */
+    var dailyLimitMinutes: Int
+        get() = sp.getInt(KEY_DAILY_LIMIT_MINUTES, 0)
+        set(value) = sp.edit().putInt(KEY_DAILY_LIMIT_MINUTES, value).apply()
+
     private companion object {
         const val KEY_ENABLED = "service_enabled"
         const val KEY_COOLDOWN = "cooldown_seconds"
@@ -84,6 +89,7 @@ class MonitorPrefs(context: Context) {
         const val KEY_DEFAULT_TIME_LIMIT = "default_time_limit"
         const val KEY_EXTENSION_SECONDS = "extension_seconds"
         const val KEY_MAX_EXTENSIONS = "max_extensions"
+        const val KEY_DAILY_LIMIT_MINUTES = "daily_limit_minutes"
     }
 }
 

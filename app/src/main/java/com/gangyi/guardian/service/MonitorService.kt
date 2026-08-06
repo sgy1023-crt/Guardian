@@ -111,10 +111,32 @@ class MonitorService : Service() {
         val session = withContext(Dispatchers.IO) { repo.getActiveSession(pkg) }
 
         if (session == null) {
-            // 无会话 → 弹出意图声明卡（带冷却递增强制等待）
+            // 无会话 → 先检查每日配额，再弹出意图声明卡
             if (!overlay.isShowing) {
                 val label = getAppLabel(pkg)
                 val todayStart = getTodayStartMs()
+
+                // 每日配额检查
+                val limitMinutes = prefs.dailyLimitMinutes
+                if (limitMinutes > 0) {
+                    val usedSeconds = withContext(Dispatchers.IO) { repo.totalSecondsToday(pkg, todayStart) }
+                    val usedMinutes = usedSeconds / 60
+                    if (usedMinutes >= limitMinutes) {
+                        withContext(Dispatchers.Main) {
+                            overlay.show(
+                                OverlayContent.DailyLimitCard(
+                                    appLabel = label,
+                                    usedMinutes = usedMinutes,
+                                    limitMinutes = limitMinutes,
+                                    onExit = { goHome() }
+                                ),
+                                OverlayController.SOURCE_APP
+                            )
+                        }
+                        return
+                    }
+                }
+
                 val openCount = withContext(Dispatchers.IO) { repo.countTodaySessions(pkg, todayStart) }
                 val forcedWait = escalationWaitSeconds(openCount)
                 withContext(Dispatchers.Main) {

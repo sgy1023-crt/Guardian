@@ -73,6 +73,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var defaultTimeLimit by remember { mutableFloatStateOf(prefs.defaultTimeLimitSeconds.toFloat()) }
     var extensionSecs by remember { mutableFloatStateOf(prefs.extensionSeconds.toFloat()) }
     var maxExtensions by remember { mutableFloatStateOf(prefs.maxExtensionCount.toFloat()) }
+    var dailyLimitMin by remember { mutableFloatStateOf(prefs.dailyLimitMinutes.toFloat()) }
     var exporting by remember { mutableStateOf(false) }
     var encrypted by remember { mutableStateOf(prefs.keywordsEncrypted) }
     var showSetPwd by remember { mutableStateOf(false) }
@@ -298,6 +299,43 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                 )
                 Text("单次打开最多续几次；设为 1 最严格", fontSize = 12.sp, color = GuardianTextFaint)
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // 每日上限
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(GuardianSurface)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("单 App 每日限额", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
+                    Text(
+                        if (dailyLimitMin.toInt() == 0) "不限" else "${dailyLimitMin.toInt()} 分钟",
+                        fontSize = 14.sp, color = GuardianAccent
+                    )
+                }
+                Slider(
+                    value = dailyLimitMin,
+                    onValueChange = { dailyLimitMin = it },
+                    onValueChangeFinished = { prefs.dailyLimitMinutes = dailyLimitMin.toInt() },
+                    valueRange = 0f..180f,
+                    steps = 35,
+                    colors = SliderDefaults.colors(
+                        thumbColor = GuardianAccent,
+                        activeTrackColor = GuardianAccent,
+                        inactiveTrackColor = GuardianBg
+                    )
+                )
+                Text(
+                    "每个 App 每天能用的总时长；0 = 不限，可设 5~180 分钟",
+                    fontSize = 12.sp, color = GuardianTextFaint
+                )
             }
         }
 

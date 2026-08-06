@@ -36,6 +36,14 @@ sealed class OverlayContent {
         val onExtend: () -> Unit,
         val onExit: () -> Unit
     ) : OverlayContent()
+
+    /** 每日额度耗尽卡：今天该 App 的使用配额已用完 */
+    data class DailyLimitCard(
+        val appLabel: String,
+        val usedMinutes: Int,
+        val limitMinutes: Int,
+        val onExit: () -> Unit
+    ) : OverlayContent()
 }
 
 /**
@@ -100,6 +108,15 @@ class OverlayController private constructor(context: Context) {
                                 dismiss(source)
                                 content.onExtend()
                             },
+                            onExit = {
+                                dismiss(source)
+                                content.onExit()
+                            }
+                        )
+                        is OverlayContent.DailyLimitCard -> DailyLimitCardContent(
+                            appLabel = content.appLabel,
+                            usedMinutes = content.usedMinutes,
+                            limitMinutes = content.limitMinutes,
                             onExit = {
                                 dismiss(source)
                                 content.onExit()
