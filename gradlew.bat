@@ -15,6 +15,8 @@
 @rem
 @rem SPDX-License-Identifier: Apache-2.0
 @rem
+@rem 强制使用Android Studio内置JBR(JDK17)
+set JAVA_HOME=D:\Programs\Android\jbr
 
 @if "%DEBUG%"=="" @echo off
 @rem ##########################################################################
