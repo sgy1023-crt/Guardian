@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
@@ -69,6 +71,7 @@ fun AppPickerScreen(onBack: () -> Unit) {
     var appLimits by remember { mutableStateOf(mapOf<String, Int>()) }
     var appCustomBlocks by remember { mutableStateOf(mapOf<String, List<StudyBlock>>()) }
     var appUseCustom by remember { mutableStateOf(setOf<String>()) }
+    var searchQuery by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -107,7 +110,35 @@ fun AppPickerScreen(onBack: () -> Unit) {
                 Text("已监控 App 可独立设置每日限额和学习时段", fontSize = 12.sp, color = GuardianTextDim)
             }
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+
+        // 搜索框
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("搜索应用名称…", color = GuardianTextFaint) },
+            singleLine = true,
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    Text(
+                        "✕",
+                        fontSize = 16.sp,
+                        color = GuardianTextDim,
+                        modifier = Modifier.clickable { searchQuery = "" }
+                    )
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = GuardianText,
+                unfocusedTextColor = GuardianText,
+                focusedBorderColor = GuardianAccent,
+                unfocusedBorderColor = GuardianTextDim,
+                cursorColor = GuardianAccent
+            ),
+            modifier = Modifier.fillMaxWidth().height(56.dp)
+        )
+
+        Spacer(Modifier.height(12.dp))
 
         val list = apps
         if (list == null) {
@@ -115,8 +146,19 @@ fun AppPickerScreen(onBack: () -> Unit) {
                 CircularProgressIndicator(color = GuardianAccent)
             }
         } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(list, key = { it.packageName }) { app ->
+            // 已监控排前面，再按搜索过滤
+            val sorted = list.sortedByDescending { it.packageName in selected }
+            val filtered = sorted.filter {
+                searchQuery.isBlank() || it.label.contains(searchQuery, ignoreCase = true)
+            }
+
+            if (filtered.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(top = 60.dp), contentAlignment = Alignment.TopCenter) {
+                    Text("没有匹配的应用", fontSize = 14.sp, color = GuardianTextDim)
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    items(filtered, key = { it.packageName }) { app ->
                     val checked = app.packageName in selected
                     val currentLimit = appLimits[app.packageName] ?: 0
                     val customBlocks = appCustomBlocks[app.packageName] ?: emptyList()
@@ -152,6 +194,7 @@ fun AppPickerScreen(onBack: () -> Unit) {
                         }
                     )
                 }
+            }
             }
         }
     }
