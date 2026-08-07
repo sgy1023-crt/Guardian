@@ -110,7 +110,10 @@ class MonitorService : Service() {
 
         // 0. 学习时段检查（最高优先级——学习时间禁止一切）
         if (prefs.studyBlockEnabled) {
-            val activeBlock = findActiveStudyBlock()
+            // 先查该 App 的自定义学习时段，没有则用全局设置
+            val appBlocks = withContext(Dispatchers.IO) { repo.getAppStudyBlocks(pkg) }
+            val effectiveBlocks = appBlocks ?: prefs.studyBlocks
+            val activeBlock = findActiveStudyBlock(effectiveBlocks)
             if (activeBlock != null) {
                 if (!overlay.isShowing) {
                     val label = getAppLabel(pkg)
@@ -318,10 +321,10 @@ class MonitorService : Service() {
     }
 
     /** 遍历所有学习时段，返回当前命中的第一个时段（null = 不在任何学习时段内）。支持跨夜。 */
-    private fun findActiveStudyBlock(): StudyBlock? {
+    private fun findActiveStudyBlock(blocks: List<StudyBlock>): StudyBlock? {
         val cal = java.util.Calendar.getInstance()
         val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-        for (block in prefs.studyBlocks) {
+        for (block in blocks) {
             val start = block.startTotalMinutes
             val end = block.endTotalMinutes
             val hit = if (start <= end) {

@@ -1,12 +1,15 @@
 package com.gangyi.guardian.data.db
 
 import android.content.Context
+import com.gangyi.guardian.data.StudyBlock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 class GuardianRepository(context: Context) {
 
@@ -62,6 +65,25 @@ class GuardianRepository(context: Context) {
     /** 设置某 App 的独立每日限额（分钟） */
     suspend fun setAppDailyLimit(pkg: String, minutes: Int) {
         appDao.updateDailyLimit(pkg, minutes)
+    }
+
+    /** 获取某 App 的自定义学习时段列表。null = 使用全局设置。 */
+    suspend fun getAppStudyBlocks(pkg: String): List<StudyBlock>? {
+        val app = appDao.getByPackage(pkg) ?: return null
+        if (!app.useCustomStudyBlocks || app.studyBlocksJson.isNullOrBlank()) return null
+        return try {
+            StudyBlock.listFromJson(app.studyBlocksJson)
+        } catch (_: Exception) { null }
+    }
+
+    /** 设置某 App 的自定义学习时段。useCustom=false 时恢复全局设置。 */
+    suspend fun setAppStudyBlocks(pkg: String, blocks: List<StudyBlock>, useCustom: Boolean) {
+        val json = if (useCustom && blocks.isNotEmpty()) {
+            JSONArray().apply {
+                blocks.forEach { put(StudyBlock.toJson(it)) }
+            }.toString()
+        } else null
+        appDao.updateStudyBlocks(pkg, json, useCustom && blocks.isNotEmpty())
     }
 
     // ---- Keyword ----

@@ -8,7 +8,11 @@ data class MonitoredApp(
     @PrimaryKey val packageName: String,
     val addedAt: Long = System.currentTimeMillis(),
     /** 该 App 独立每日使用时长上限（分钟），0 = 不限制，默认 0 */
-    val dailyLimitMinutes: Int = 0
+    val dailyLimitMinutes: Int = 0,
+    /** 该 App 自定义学习时段（JSON 数组），null = 使用全局设置 */
+    val studyBlocksJson: String? = null,
+    /** 是否使用自定义学习时段而非全局设置 */
+    val useCustomStudyBlocks: Boolean = false
 )
 
 @Entity(tableName = "keywords")

@@ -28,6 +28,9 @@ interface MonitoredAppDao {
 
     @Query("UPDATE monitored_apps SET dailyLimitMinutes = :minutes WHERE packageName = :pkg")
     suspend fun updateDailyLimit(pkg: String, minutes: Int)
+
+    @Query("UPDATE monitored_apps SET studyBlocksJson = :json, useCustomStudyBlocks = :useCustom WHERE packageName = :pkg")
+    suspend fun updateStudyBlocks(pkg: String, json: String?, useCustom: Boolean)
 }
 
 @Dao

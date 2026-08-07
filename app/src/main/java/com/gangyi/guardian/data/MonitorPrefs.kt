@@ -33,6 +33,11 @@ data class StudyBlock(
             put("eh", block.endHour)
             put("em", block.endMinute)
         }
+
+        fun listFromJson(json: String): List<StudyBlock> {
+            val arr = JSONArray(json)
+            return (0 until arr.length()).map { i -> fromJson(arr.getJSONObject(i)) }
+        }
     }
 }
 

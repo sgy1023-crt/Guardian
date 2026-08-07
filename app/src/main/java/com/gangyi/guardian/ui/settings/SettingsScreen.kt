@@ -499,6 +499,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                         "可分别设置上午/下午/晚上多个时段；支持跨夜（如 22:00~06:00）",
                         fontSize = 11.sp, color = GuardianTextFaint
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "💡 每个 App 可在「监控列表」中单独设置不同的学习时段，覆盖此全局设置",
+                        fontSize = 11.sp, color = GuardianAccent
+                    )
                 }
             }
         }
