@@ -183,6 +183,7 @@ class MonitorService : Service() {
                                 scope.launch {
                                     repo.logTrigger(pkg, TriggerLog.TYPE_APP, "CANCELLED")
                                 }
+                                goHome()
                             }
                         ),
                         OverlayController.SOURCE_APP
