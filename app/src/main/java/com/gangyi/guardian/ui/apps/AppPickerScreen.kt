@@ -32,6 +32,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -192,7 +193,7 @@ private fun AppRow(
                 )
                 Slider(
                     value = currentLimit.toFloat(),
-                    onValueChange = { onLimitChange(it.toInt()) },
+                    onValueChange = { onLimitChange(it.roundToInt()) },
                     valueRange = 0f..180f,
                     steps = 35,
                     modifier = Modifier.weight(1f).height(32.dp),

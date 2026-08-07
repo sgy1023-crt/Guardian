@@ -31,11 +31,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,12 +70,12 @@ fun SettingsScreen(onBack: () -> Unit) {
     val repo = remember { GuardianRepository(context) }
     val scope = rememberCoroutineScope()
 
-    var cooldown by remember { mutableFloatStateOf(prefs.cooldownSeconds.toFloat()) }
-    var scanInterval by remember { mutableFloatStateOf(prefs.screenScanIntervalSeconds) }
-    var overlayCountdown by remember { mutableFloatStateOf(prefs.overlayCountdownSeconds.toFloat()) }
-    var defaultTimeLimit by remember { mutableFloatStateOf(prefs.defaultTimeLimitSeconds.toFloat()) }
-    var extensionSecs by remember { mutableFloatStateOf(prefs.extensionSeconds.toFloat()) }
-    var maxExtensions by remember { mutableFloatStateOf(prefs.maxExtensionCount.toFloat()) }
+    var cooldown by remember { mutableStateOf(prefs.cooldownSeconds.toFloat()) }
+    var scanInterval by remember { mutableStateOf(prefs.screenScanIntervalSeconds) }
+    var overlayCountdown by remember { mutableStateOf(prefs.overlayCountdownSeconds.toFloat()) }
+    var defaultTimeLimit by remember { mutableStateOf(prefs.defaultTimeLimitSeconds.toFloat()) }
+    var extensionSecs by remember { mutableStateOf(prefs.extensionSeconds.toFloat()) }
+    var maxExtensions by remember { mutableStateOf(prefs.maxExtensionCount.toFloat()) }
     var studyEnabled by remember { mutableStateOf(prefs.studyBlockEnabled) }
     val studyBlocks = remember { androidx.compose.runtime.mutableStateListOf<StudyBlock>() }
     // 初始化：从 prefs 加载已有时段
@@ -124,12 +124,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("同一 App / 关键词触发后冷却", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${cooldown.toInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
+                    Text("${cooldown.roundToInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
                 }
                 Slider(
                     value = cooldown,
                     onValueChange = { cooldown = it },
-                    onValueChangeFinished = { prefs.cooldownSeconds = cooldown.toInt() },
+                    onValueChangeFinished = { prefs.cooldownSeconds = cooldown.roundToInt() },
                     valueRange = 5f..300f,
                     steps = 58,
                     colors = SliderDefaults.colors(
@@ -196,12 +196,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("倒计时秒数", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${overlayCountdown.toInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
+                    Text("${overlayCountdown.roundToInt()} 秒", fontSize = 14.sp, color = GuardianAccent)
                 }
                 Slider(
                     value = overlayCountdown,
                     onValueChange = { overlayCountdown = it },
-                    onValueChangeFinished = { prefs.overlayCountdownSeconds = overlayCountdown.toInt() },
+                    onValueChangeFinished = { prefs.overlayCountdownSeconds = overlayCountdown.roundToInt() },
                     valueRange = 3f..180f,
                     steps = 176,
                     colors = SliderDefaults.colors(
@@ -232,12 +232,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("默认使用时长", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${defaultTimeLimit.toInt() / 60} 分钟", fontSize = 14.sp, color = GuardianAccent)
+                    Text("${defaultTimeLimit.roundToInt() / 60} 分钟", fontSize = 14.sp, color = GuardianAccent)
                 }
                 Slider(
                     value = defaultTimeLimit,
                     onValueChange = { defaultTimeLimit = it },
-                    onValueChangeFinished = { prefs.defaultTimeLimitSeconds = defaultTimeLimit.toInt() },
+                    onValueChangeFinished = { prefs.defaultTimeLimitSeconds = defaultTimeLimit.roundToInt() },
                     valueRange = 60f..3600f,
                     steps = 58,
                     colors = SliderDefaults.colors(
@@ -262,12 +262,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("每次续时时长", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${extensionSecs.toInt() / 60} 分钟", fontSize = 14.sp, color = GuardianAccent)
+                    Text("${extensionSecs.roundToInt() / 60} 分钟", fontSize = 14.sp, color = GuardianAccent)
                 }
                 Slider(
                     value = extensionSecs,
                     onValueChange = { extensionSecs = it },
-                    onValueChangeFinished = { prefs.extensionSeconds = extensionSecs.toInt() },
+                    onValueChangeFinished = { prefs.extensionSeconds = extensionSecs.roundToInt() },
                     valueRange = 60f..600f,
                     steps = 9,
                     colors = SliderDefaults.colors(
@@ -292,12 +292,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("最大续时次数", fontSize = 15.sp, color = GuardianText, modifier = Modifier.weight(1f))
-                    Text("${maxExtensions.toInt()} 次", fontSize = 14.sp, color = GuardianAccent)
+                    Text("${maxExtensions.roundToInt()} 次", fontSize = 14.sp, color = GuardianAccent)
                 }
                 Slider(
                     value = maxExtensions,
                     onValueChange = { maxExtensions = it },
-                    onValueChangeFinished = { prefs.maxExtensionCount = maxExtensions.toInt() },
+                    onValueChangeFinished = { prefs.maxExtensionCount = maxExtensions.roundToInt() },
                     valueRange = 1f..5f,
                     steps = 3,
                     colors = SliderDefaults.colors(
@@ -403,7 +403,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             Slider(
                                 value = block.startHour.toFloat(),
                                 onValueChange = {
-                                    studyBlocks[blockIdx] = block.copy(startHour = it.toInt())
+                                    studyBlocks[blockIdx] = block.copy(startHour = it.roundToInt())
                                     syncStudyBlocks()
                                 },
                                 valueRange = 0f..23f,
@@ -422,7 +422,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             Slider(
                                 value = block.startMinute.toFloat(),
                                 onValueChange = {
-                                    studyBlocks[blockIdx] = block.copy(startMinute = it.toInt())
+                                    studyBlocks[blockIdx] = block.copy(startMinute = it.roundToInt())
                                     syncStudyBlocks()
                                 },
                                 valueRange = 0f..55f,
@@ -441,7 +441,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             Slider(
                                 value = block.endHour.toFloat(),
                                 onValueChange = {
-                                    studyBlocks[blockIdx] = block.copy(endHour = it.toInt())
+                                    studyBlocks[blockIdx] = block.copy(endHour = it.roundToInt())
                                     syncStudyBlocks()
                                 },
                                 valueRange = 0f..23f,
@@ -460,7 +460,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             Slider(
                                 value = block.endMinute.toFloat(),
                                 onValueChange = {
-                                    studyBlocks[blockIdx] = block.copy(endMinute = it.toInt())
+                                    studyBlocks[blockIdx] = block.copy(endMinute = it.roundToInt())
                                     syncStudyBlocks()
                                 },
                                 valueRange = 0f..55f,
