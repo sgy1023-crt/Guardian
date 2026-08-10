@@ -80,6 +80,10 @@ fun SettingsScreen(onBack: () -> Unit) {
     var overlayCountdown by remember { mutableFloatStateOf(prefs.overlayCountdownSeconds.toFloat()) }
     var alertVibrate by remember { mutableStateOf(prefs.alertVibrate) }
     var alertSound by remember { mutableStateOf(prefs.alertSound) }
+    var escCdEnabled by remember { mutableStateOf(prefs.escalatingCountdownEnabled) }
+    var cdMultiplier by remember { mutableFloatStateOf(prefs.countdownMultiplier) }
+    var escInterval by remember { mutableFloatStateOf(prefs.escalationIntervalSeconds.toFloat()) }
+    var cdMax by remember { mutableFloatStateOf(prefs.countdownMaxSeconds.toFloat()) }
     var exporting by remember { mutableStateOf(false) }
     var encrypted by remember { mutableStateOf(prefs.keywordsEncrypted) }
     var showSetPwd by remember { mutableStateOf(false) }
@@ -112,7 +116,10 @@ fun SettingsScreen(onBack: () -> Unit) {
         GuardianSlider(
             label = "同一 App / 关键词触发后冷却",
             valueText = "${cooldown.toInt()} 秒",
-            hint = "弹窗关闭后这段时间内，同一目标不再触发（避免反复弹）",
+            hint = if (escCdEnabled)
+                "已被「递增倒计时」接管，当前不生效——节流改由下方「递增间隔」控制"
+            else
+                "弹窗关闭后这段时间内，同一目标不再触发（避免反复弹）",
             value = cooldown,
             valueRange = 5f..300f,
             onValueChange = { cooldown = it },
@@ -146,6 +153,71 @@ fun SettingsScreen(onBack: () -> Unit) {
             onValueChange = { overlayCountdown = it },
             onValueChangeFinished = { prefs.overlayCountdownSeconds = overlayCountdown.toInt() }
         )
+
+        Spacer(Modifier.height(10.dp))
+
+        // 递增倒计时：越挣扎、等得越久
+        GuardianCard(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("递增倒计时", fontSize = 15.sp, color = GuardianText)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "连续被抓到时，倒计时按倍数加长：${overlayCountdown.toInt()} 秒 → " +
+                            "${(overlayCountdown * cdMultiplier).toInt()} 秒 → " +
+                            "${(overlayCountdown * cdMultiplier * cdMultiplier).toInt().coerceAtMost(cdMax.toInt())} 秒…" +
+                            "\n开启后，下面的「递增间隔」取代「提醒冷却」生效",
+                        fontSize = 12.sp, color = GuardianTextFaint
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = escCdEnabled,
+                    onCheckedChange = {
+                        escCdEnabled = it
+                        prefs.escalatingCountdownEnabled = it
+                    },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = GuardianAccent,
+                        checkedTrackColor = GuardianAccent
+                    )
+                )
+            }
+        }
+
+        if (escCdEnabled) {
+            Spacer(Modifier.height(10.dp))
+            GuardianSlider(
+                label = "翻倍系数",
+                valueText = String.format("%.1f 倍", cdMultiplier),
+                hint = "每连续触发一次，倒计时乘以这个数。2 倍即 15→30→60 秒",
+                value = cdMultiplier,
+                valueRange = 1.2f..5f,
+                onValueChange = { cdMultiplier = it },
+                onValueChangeFinished = { prefs.countdownMultiplier = cdMultiplier }
+            )
+            Spacer(Modifier.height(10.dp))
+            GuardianSlider(
+                label = "递增间隔",
+                valueText = "${escInterval.toInt()} 秒",
+                hint = "两次触发相隔在这个时间内算「还在挣扎」，倒计时翻倍；超过则重新从头算",
+                value = escInterval,
+                valueRange = 10f..600f,
+                onValueChange = { escInterval = it },
+                onValueChangeFinished = { prefs.escalationIntervalSeconds = escInterval.toInt() }
+            )
+            Spacer(Modifier.height(10.dp))
+            GuardianSlider(
+                label = "倒计时封顶",
+                valueText = "${cdMax.toInt()} 秒",
+                hint = "翻倍最多加长到这里为止，防止误触发时痛苦到无法忍受",
+                value = cdMax,
+                valueRange = 30f..1800f,
+                onValueChange = { cdMax = it },
+                onValueChangeFinished = { prefs.countdownMaxSeconds = cdMax.toInt() }
+            )
+        }
 
         Spacer(Modifier.height(20.dp))
 
@@ -256,9 +328,9 @@ fun SettingsScreen(onBack: () -> Unit) {
             GuardianSlider(
                 label = "触发次数阈值",
                 valueText = "${escThreshold.toInt()} 次",
-                hint = "窗口内被提醒这么多次，就升级为封锁",
+                hint = "窗口内被提醒这么多次就封锁。设为 1 = 一打开就直接封锁，不先提醒",
                 value = escThreshold,
-                valueRange = 2f..10f,
+                valueRange = 1f..10f,
                 onValueChange = { escThreshold = it },
                 onValueChangeFinished = { prefs.escalationThreshold = escThreshold.toInt() }
             )

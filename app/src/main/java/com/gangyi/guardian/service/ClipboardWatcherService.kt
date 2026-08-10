@@ -11,6 +11,7 @@ import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.data.MODE_FIXED
 import com.gangyi.guardian.data.MonitorPrefs
+import com.gangyi.guardian.guard.CountdownEscalator
 import com.gangyi.guardian.guard.EscalationTracker
 import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
 import com.gangyi.guardian.overlay.OverlayController
@@ -177,8 +178,15 @@ class ClipboardWatcherService : AccessibilityService() {
             recentHits.entries.removeAll { now - it.value > DEBOUNCE_MS }
         }
 
-        val cooldownMs = prefs.cooldownSeconds * 1000L
-        if (now - lastTriggerAt < cooldownMs) return
+        // 递增模式下冷却让位（否则第二次弹窗被冷却吃掉，翻倍永远不触发）；
+        // 此时节流交给 CountdownEscalator 的最小间隔，只防轮询抖动
+        val escalating = prefs.escalatingCountdownEnabled
+        if (escalating) {
+            if (!CountdownEscalator.minGapPassed(pkg, now)) return
+        } else {
+            val cooldownMs = prefs.cooldownSeconds * 1000L
+            if (now - lastTriggerAt < cooldownMs) return
+        }
 
         // 攒够次数就升级为封锁。封的是当前前台包（浏览器里反复搜关键词正是核心场景），
         // 哪怕这个包不在监控列表里——但会先过 SystemPackages 的安全闸。
@@ -195,10 +203,12 @@ class ClipboardWatcherService : AccessibilityService() {
 
         val base = pickReminder()
         val message = if (prefs.keywordsEncrypted) base else "（含关键词「$hit」）\n$base"
+        // 连续挣扎时倒计时翻倍：15 → 30 → 60…
+        val seconds = CountdownEscalator.nextCountdown(this, pkg)
         var shown = false
         withContextMain {
             if (!overlay.isShowing) {
-                overlay.show(message, OverlayController.SOURCE_KEYWORD)
+                overlay.show(message, OverlayController.SOURCE_KEYWORD, seconds)
                 shown = true
             }
         }

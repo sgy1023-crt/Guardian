@@ -31,6 +31,35 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_OVERLAY_COUNTDOWN, 5)
         set(value) = sp.edit().putInt(KEY_OVERLAY_COUNTDOWN, value).apply()
 
+    /**
+     * 递增倒计时总开关。开启后每次连续被抓到，弹窗倒计时按倍数翻倍——
+     * 挣扎越多、等得越久。比强制踢后台更有效，因为不激起对抗心理。
+     */
+    var escalatingCountdownEnabled: Boolean
+        get() = sp.getBoolean(KEY_ESC_CD_ENABLED, false)
+        set(value) = sp.edit().putBoolean(KEY_ESC_CD_ENABLED, value).apply()
+
+    /** 倒计时翻倍系数，默认 2.0 倍。15s → 30s → 60s */
+    var countdownMultiplier: Float
+        get() = sp.getFloat(KEY_CD_MULTIPLIER, 2.0f)
+        set(value) = sp.edit().putFloat(KEY_CD_MULTIPLIER, value).apply()
+
+    /**
+     * 递增间隔秒数，默认 60 秒。两次触发相隔在这个时间内算"连续挣扎"，倒计时翻倍；
+     * 超过则视为已经真的离开过，倒计时重置回初始值。
+     *
+     * 递增模式开启时，这一项取代 cooldownSeconds 的位置——两套机制不同时生效，
+     * 否则冷却会把第二次弹窗吃掉，翻倍永远触发不了。
+     */
+    var escalationIntervalSeconds: Int
+        get() = sp.getInt(KEY_ESC_INTERVAL, 60)
+        set(value) = sp.edit().putInt(KEY_ESC_INTERVAL, value).apply()
+
+    /** 倒计时翻倍的封顶秒数，默认 300 秒（5 分钟）。防止误触发时痛苦到无法忍受 */
+    var countdownMaxSeconds: Int
+        get() = sp.getInt(KEY_CD_MAX, 300)
+        set(value) = sp.edit().putInt(KEY_CD_MAX, value).apply()
+
     /** 弹窗振动开关，默认开。别人察觉不到，但身体会记住 */
     var alertVibrate: Boolean
         get() = sp.getBoolean(KEY_ALERT_VIBRATE, true)
@@ -91,6 +120,10 @@ class MonitorPrefs(context: Context) {
         const val KEY_COOLDOWN = "cooldown_seconds"
         const val KEY_SCAN_INTERVAL = "screen_scan_interval"
         const val KEY_OVERLAY_COUNTDOWN = "overlay_countdown"
+        const val KEY_ESC_CD_ENABLED = "escalating_countdown_enabled"
+        const val KEY_CD_MULTIPLIER = "countdown_multiplier"
+        const val KEY_ESC_INTERVAL = "escalation_interval_seconds"
+        const val KEY_CD_MAX = "countdown_max_seconds"
         const val KEY_ALERT_VIBRATE = "alert_vibrate"
         const val KEY_ALERT_SOUND = "alert_sound"
         const val KEY_ONBOARDING = "onboarding_done"

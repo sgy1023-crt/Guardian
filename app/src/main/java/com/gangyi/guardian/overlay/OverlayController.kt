@@ -38,10 +38,11 @@ class OverlayController private constructor(context: Context) {
     /** 当前弹窗的来源标记，没弹窗时为 null。 */
     val showingSource: String? get() = currentSource
 
-    fun show(reminder: String, source: String) {
+    fun show(reminder: String, source: String, countdownSeconds: Int = 0) {
         attach(source) {
             InterventionContent(
                 reminder = reminder,
+                countdownSeconds = countdownSeconds,
                 onDismiss = { dismissCurrent() }
             )
         }

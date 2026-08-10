@@ -48,6 +48,8 @@ import com.gangyi.guardian.ui.theme.GuardianAccent
 import com.gangyi.guardian.ui.theme.GuardianAccentSoft
 import com.gangyi.guardian.ui.theme.GuardianBg
 import com.gangyi.guardian.ui.theme.GuardianBorder
+import com.gangyi.guardian.ui.theme.GuardianDanger
+import com.gangyi.guardian.ui.theme.GuardianDangerSoft
 import com.gangyi.guardian.ui.theme.GuardianSurface
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
@@ -71,10 +73,18 @@ val DEFAULT_REMINDERS = listOf(
  * 三层共用一个 Canvas，比堆 Box 更省层级也更好控。
  */
 @Composable
-fun InterventionContent(reminder: String, onDismiss: () -> Unit) {
+fun InterventionContent(
+    reminder: String,
+    countdownSeconds: Int = 0,
+    onDismiss: () -> Unit
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val countdownTotal = remember { MonitorPrefs(context).overlayCountdownSeconds.coerceIn(1, 180) }
-    var countdown by remember { mutableIntStateOf(countdownTotal) }
+    // countdownSeconds > 0 表示调用方已算好（递增模式）；否则回退到设置里的固定值
+    val countdownTotal = remember(countdownSeconds) {
+        if (countdownSeconds > 0) countdownSeconds.coerceIn(1, 3600)
+        else MonitorPrefs(context).overlayCountdownSeconds.coerceIn(1, 180)
+    }
+    var countdown by remember(countdownTotal) { mutableIntStateOf(countdownTotal) }
 
     LaunchedEffect(Unit) {
         while (countdown > 0) {
@@ -122,7 +132,13 @@ fun InterventionContent(reminder: String, onDismiss: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            GuardianChip("停顿点", GuardianAccent, GuardianAccentSoft)
+            // 连击时把等级显示出来：让人直观意识到"越挣扎、等得越久"，
+            // 这份自觉本身就是摩擦力的一部分
+            if (countdownTotal > MonitorPrefs(context).overlayCountdownSeconds) {
+                GuardianChip("停顿点 · 已加长", GuardianDanger, GuardianDangerSoft)
+            } else {
+                GuardianChip("停顿点", GuardianAccent, GuardianAccentSoft)
+            }
 
             Spacer(Modifier.height(24.dp))
 

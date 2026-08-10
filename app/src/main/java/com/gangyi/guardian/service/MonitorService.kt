@@ -18,6 +18,7 @@ import com.gangyi.guardian.data.MODE_FIXED
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.detect.ForegroundAppDetector
+import com.gangyi.guardian.guard.CountdownEscalator
 import com.gangyi.guardian.guard.EscalationTracker
 import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
 import com.gangyi.guardian.overlay.OverlayController
@@ -50,6 +51,9 @@ class MonitorService : Service() {
 
     /** 上次踢桌面的时间，用于节流，避免每秒踢一次闪屏 */
     private var lastKickAt = 0L
+
+    /** 上一轮轮询的前台包名。包名变化 = 用户离开过又进来（封锁要立刻响应） */
+    private var lastForegroundPkg: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -89,15 +93,21 @@ class MonitorService : Service() {
 
                 val pkg = ForegroundAppDetector.getForegroundPackage(this@MonitorService)
 
+                // 记是否"刚闯入"：跟前一轮包名不同，说明离开过又进来。
+                // 封锁只挡这一个动作——见下方节流逻辑。
+                val isNewEntry = pkg != lastForegroundPkg
+                lastForegroundPkg = pkg
+
                 // 封锁优先于一切：被封的 App 一露头就踢回桌面，连弹窗判定都不用走。
                 // 注意这里不看 monitoredPkgs——封锁是对"当时那个前台包"生效的，
                 // 哪怕用户事后把它从监控列表删了，封锁期内照样踢。
                 if (EscalationTracker.isLocked(pkg)) {
                     val now = System.currentTimeMillis()
                     val remaining = EscalationTracker.lockRemainingMs(pkg)
-                    // 节流：轮询 1s 一次，但踢桌面不能每秒来一遍，否则是疯狂闪屏。
-                    // 踢一次给 3 秒观察期。
-                    if (now - lastKickAt > KICK_THROTTLE_MS) {
+                    // 节流只防"人停在 App 里不动时每秒踢一次"的闪屏（3 秒一次观察期）。
+                    // 但**重新闯入必须立刻踢**——用户退到桌面再点开，要的就是
+                    // "一点就回桌面"的体验，不能被节流放行。
+                    if (isNewEntry || now - lastKickAt > KICK_THROTTLE_MS) {
                         lastKickAt = now
                         val kicked = ClipboardWatcherService.kickToHome()
                         withContext(Dispatchers.Main) {
@@ -120,9 +130,16 @@ class MonitorService : Service() {
 
                 if (hit) {
                     val now = System.currentTimeMillis()
-                    val cooldownMs = prefs.cooldownSeconds * 1000L
+                    // 递增模式下冷却让位：冷却 30 秒会把第二次弹窗吃掉，
+                    // 翻倍就永远触发不了。此时改用 CountdownEscalator 的最小间隔（3 秒），
+                    // 它只防轮询抖动，"隔多久算连续挣扎"交给递增间隔那一项管。
+                    val escalating = prefs.escalatingCountdownEnabled
                     val lastAt = lastTriggerAtByPkg[pkg] ?: 0L
-                    val freshTrigger = now - lastAt > cooldownMs
+                    val freshTrigger = if (escalating) {
+                        CountdownEscalator.minGapPassed(pkg ?: "", now)
+                    } else {
+                        now - lastAt > prefs.cooldownSeconds * 1000L
+                    }
                     if (freshTrigger && !overlay.isShowing) {
                         lastTriggerAtByPkg[pkg!!] = now
                         // 记一次触发；窗口内攒够次数就升级为封锁。
@@ -144,8 +161,12 @@ class MonitorService : Service() {
                             Log.d(TAG, "升级封锁 pkg=$pkg 踢出=$kicked")
                         } else {
                             val reminder = pickReminder()
+                            // 连续挣扎时倒计时翻倍：15 → 30 → 60…
+                            val seconds = CountdownEscalator.nextCountdown(
+                                this@MonitorService, pkg
+                            )
                             withContext(Dispatchers.Main) {
-                                overlay.show(reminder, OverlayController.SOURCE_APP)
+                                overlay.show(reminder, OverlayController.SOURCE_APP, seconds)
                             }
                             launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
                         }
