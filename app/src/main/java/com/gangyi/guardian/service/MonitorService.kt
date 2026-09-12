@@ -13,9 +13,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.gangyi.guardian.MainActivity
 import com.gangyi.guardian.R
+import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.detect.ForegroundAppDetector
 import com.gangyi.guardian.guard.EscalationTracker
+import com.gangyi.guardian.guard.GuardSchedule
 import com.gangyi.guardian.guard.InterventionCoordinator
 import com.gangyi.guardian.overlay.OverlayController
 import com.gangyi.guardian.permission.Permissions
@@ -46,6 +48,7 @@ class MonitorService : Service() {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var loopJob: Job? = null
     private lateinit var repo: GuardianRepository
+    private lateinit var prefs: MonitorPrefs
     private lateinit var overlay: OverlayController
     private lateinit var powerManager: PowerManager
 
@@ -65,6 +68,7 @@ class MonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         repo = GuardianRepository(this)
+        prefs = MonitorPrefs(this)
         overlay = OverlayController.get(this)
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         EscalationTracker.init(this)
@@ -96,6 +100,7 @@ class MonitorService : Service() {
                 pollCount++
                 if (pollCount % PRUNE_EVERY_POLLS == 0L) {
                     EscalationTracker.pruneExpired()
+                    refreshNotificationIfChanged()
                     // 权限被 ROM 悄悄收回是国产机常态，静默失效比不工作更糟——每 30 秒核对一次
                     if (!Permissions.hasUsageAccess(this@MonitorService)) {
                         ForegroundAppDetector.reset()
@@ -155,6 +160,12 @@ class MonitorService : Service() {
                     continue
                 }
 
+                // 暂停中 / 时段外：不弹新窗、不计数。已生效的封锁上面已经执行过了
+                if (!GuardSchedule.isActive(prefs)) {
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
                 // 3. 失信：说了退出、宽限过了、人还在
                 when (EscalationTracker.consumeExpiredGrace(pkg)) {
                     is EscalationTracker.ContinueResult.Locked -> {
@@ -209,7 +220,7 @@ class MonitorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun buildNotification(): Notification {
+    private fun buildNotification(text: String = notificationText()): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID, "守卫运行状态", NotificationManager.IMPORTANCE_LOW
@@ -223,11 +234,42 @@ class MonitorService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("守卫运行中")
-            .setContentText("正在守护你的专注")
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pi)
             .setOngoing(true)
             .build()
+    }
+
+    /** 常驻通知的一句话状态：让人从通知栏就知道现在是在守护、暂停还是时段外。 */
+    private fun notificationText(): String {
+        val now = System.currentTimeMillis()
+        if (GuardSchedule.isPaused(prefs, now)) {
+            return "已暂停，${GuardSchedule.formatHm(minutesOfDay(prefs.pausedUntil))} 恢复守护"
+        }
+        if (!GuardSchedule.isInSchedule(prefs, now)) {
+            val next = GuardSchedule.nextScheduleStart(prefs, now)
+            return if (next != null) "时段外，${GuardSchedule.describeNextStart(next, now)} 开始守护"
+            else "时段外，没有选中任何守护日"
+        }
+        return "正在守护你的专注"
+    }
+
+    private var lastNotificationText: String? = null
+
+    private fun refreshNotificationIfChanged() {
+        val text = notificationText()
+        if (text == lastNotificationText) return
+        lastNotificationText = text
+        runCatching {
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .notify(NOTIF_ID, buildNotification(text))
+        }
+    }
+
+    private fun minutesOfDay(ms: Long): Int {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = ms }
+        return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
     }
 
     companion object {

@@ -2,6 +2,7 @@ package com.gangyi.guardian.ui.home
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,18 +16,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Accessibility
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +46,7 @@ import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.guard.EscalationTracker
+import com.gangyi.guardian.guard.GuardSchedule
 import com.gangyi.guardian.permission.PermissionState
 import com.gangyi.guardian.service.MonitorService
 import com.gangyi.guardian.ui.components.AllGrantedRow
@@ -59,6 +65,7 @@ import com.gangyi.guardian.ui.theme.GuardianBg
 import com.gangyi.guardian.ui.theme.GuardianDanger
 import com.gangyi.guardian.ui.theme.GuardianDangerSoft
 import com.gangyi.guardian.ui.theme.GuardianSuccess
+import com.gangyi.guardian.ui.theme.GuardianSurface
 import com.gangyi.guardian.ui.theme.GuardianSurface2
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
@@ -97,18 +104,24 @@ fun HomeScreen(
         streak = withContext(Dispatchers.IO) { computeStreak(repo, todayStart) }
     }
 
-    // 封锁横幅每秒刷新剩余时间
+    // 封锁横幅 / 暂停剩余 / 时段状态，每秒刷新一次
     var locks by remember { mutableStateOf(EscalationTracker.activeLocks()) }
+    var nowTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
         while (true) {
             locks = EscalationTracker.activeLocks()
+            nowTick = System.currentTimeMillis()
             delay(1000L)
         }
     }
+    var pausedUntil by remember { mutableLongStateOf(prefs.pausedUntil) }
+    val paused = pausedUntil > nowTick
+    val inSchedule = GuardSchedule.isInSchedule(prefs, nowTick)
+    var showPause by remember { mutableStateOf(false) }
 
     val hasRules = monitored.isNotEmpty() || keywords.isNotEmpty()
     val canStart = perms.requiredGranted && hasRules
-    val preset = remember(prefs.currentPreset()) { prefs.currentPreset() }
+    val preset = prefs.currentPreset()
 
     Column(
         modifier = Modifier
@@ -122,8 +135,9 @@ fun HomeScreen(
         Spacer(Modifier.height(20.dp))
 
         // ---- 状态主卡
+        val guarding = serviceRunning && !paused && inSchedule
         GuardianCard(
-            glowColor = if (serviceRunning) GuardianAccent else null,
+            glowColor = if (guarding) GuardianAccent else null,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -131,12 +145,20 @@ fun HomeScreen(
                     modifier = Modifier
                         .size(12.dp)
                         .clip(CircleShape)
-                        .background(if (serviceRunning) GuardianSuccess else GuardianTextFaint)
+                        .background(
+                            when {
+                                guarding -> GuardianSuccess
+                                serviceRunning -> GuardianAccent
+                                else -> GuardianTextFaint
+                            }
+                        )
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
                         when {
+                            serviceRunning && paused -> "暂停中"
+                            serviceRunning && !inSchedule -> "时段外"
                             serviceRunning -> "守护中"
                             !perms.usage || !perms.overlay -> "还没准备好"
                             !hasRules -> "还没有规则"
@@ -147,6 +169,10 @@ fun HomeScreen(
                     Spacer(Modifier.height(2.dp))
                     Text(
                         when {
+                            serviceRunning && paused -> "${formatHm(pausedUntil)} 自动恢复守护"
+                            serviceRunning && !inSchedule -> GuardSchedule.nextScheduleStart(prefs, nowTick)
+                                ?.let { "${GuardSchedule.describeNextStart(it, nowTick)} 开始守护" }
+                                ?: "守护时段里没有选中任何一天"
                             !perms.usage -> "需要开启「用量访问」权限"
                             !perms.overlay -> "需要开启「悬浮窗」权限"
                             !hasRules -> "去「规则」里选几个应用或关键词"
@@ -180,7 +206,46 @@ fun HomeScreen(
                 )
             }
 
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
+
+            // 暂停一会 / 立即恢复：出差开会临时放开，不用碰总开关
+            if (serviceRunning) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        when {
+                            paused -> "暂停期间不弹不计数，已封锁的照旧"
+                            prefs.scheduleEnabled -> "守护时段：${GuardSchedule.describe(prefs)}"
+                            else -> "全天守护 · 需要临时放开就点右边"
+                        },
+                        fontSize = 12.sp, color = GuardianTextFaint, lineHeight = 17.sp,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (paused) GuardianAccent else GuardianSurface2)
+                            .clickable {
+                                if (paused) {
+                                    prefs.pausedUntil = 0L
+                                    pausedUntil = 0L
+                                } else if (EscalationTracker.anyActiveLock()) {
+                                    Toast.makeText(context, "封锁期间不能暂停守护", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showPause = true
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            if (paused) "立即恢复" else "暂停一会",
+                            fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                            color = if (paused) GuardianBg else GuardianText
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile("今日停顿", "$todayCount", Modifier.weight(1f), unit = "次")
@@ -267,6 +332,60 @@ fun HomeScreen(
 
         Spacer(Modifier.height(32.dp))
     }
+
+    if (showPause) {
+        val now = System.currentTimeMillis()
+        val endOfToday = startOfToday() + TimeUnit.DAYS.toMillis(1)
+        val options = listOf(
+            "30 分钟" to 30 * 60_000L,
+            "1 小时" to 60 * 60_000L,
+            "3 小时" to 3 * 60 * 60_000L,
+            "今天剩下的时间" to (endOfToday - now).coerceAtLeast(60_000L)
+        )
+        AlertDialog(
+            onDismissRequest = { showPause = false },
+            containerColor = GuardianSurface,
+            titleContentColor = GuardianText,
+            shape = RoundedCornerShape(24.dp),
+            title = { Text("暂停多久", fontSize = 18.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text("暂停期间不弹停顿点、不计数。已经生效的封锁不受影响。", fontSize = 13.sp, color = GuardianTextDim, lineHeight = 19.sp)
+                    Spacer(Modifier.height(12.dp))
+                    options.forEach { (label, ms) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(GuardianSurface2)
+                                .clickable {
+                                    val until = System.currentTimeMillis() + ms
+                                    prefs.pausedUntil = until
+                                    pausedUntil = until
+                                    showPause = false
+                                }
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = GuardianText, modifier = Modifier.weight(1f))
+                            Text("至 ${formatHm(now + ms)}", fontSize = 12.sp, color = GuardianTextFaint)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showPause = false }) { Text("取消", color = GuardianTextDim) }
+            }
+        )
+    }
+}
+
+/** 时间戳 → HH:mm */
+internal fun formatHm(ms: Long): String {
+    val cal = Calendar.getInstance().apply { timeInMillis = ms }
+    return "%02d:%02d".format(cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
 }
 
 @Composable

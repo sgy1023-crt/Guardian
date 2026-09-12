@@ -31,14 +31,22 @@ import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Password
+import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.TimePickerDefaults
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,10 +61,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.Preset
 import com.gangyi.guardian.data.db.GuardianRepository
+import com.gangyi.guardian.guard.GuardSchedule
 import com.gangyi.guardian.permission.PermissionState
 import com.gangyi.guardian.ui.components.GuardianCard
 import com.gangyi.guardian.ui.components.GuardianChip
@@ -128,6 +138,14 @@ fun SettingsScreen(perms: PermissionState) {
     var alertVibrate by remember { mutableStateOf(prefs.alertVibrate) }
     var alertSound by remember { mutableStateOf(prefs.alertSound) }
     var soundInSilent by remember { mutableStateOf(prefs.alertSoundInSilent) }
+
+    // 守护时段
+    var scheduleEnabled by remember { mutableStateOf(prefs.scheduleEnabled) }
+    var schedStart by remember { mutableIntStateOf(prefs.scheduleStartMinutes) }
+    var schedEnd by remember { mutableIntStateOf(prefs.scheduleEndMinutes) }
+    var schedDays by remember { mutableStateOf(prefs.scheduleDays) }
+    var pickingStart by remember { mutableStateOf(false) }
+    var pickingEnd by remember { mutableStateOf(false) }
 
     // 关键词
     var inputOnly by remember { mutableStateOf(prefs.keywordInputOnly) }
@@ -305,6 +323,77 @@ fun SettingsScreen(perms: PermissionState) {
 
         Spacer(Modifier.height(24.dp))
 
+        // ================= 守护时段
+        SectionLabel("守护时段")
+        GuardianCard(contentPadding = PaddingValues(0.dp)) {
+            SwitchRow(
+                title = "只在特定时段守护",
+                subtitle = if (scheduleEnabled) GuardSchedule.describe(prefs) + "，其余时间不弹不计数"
+                else "关闭时全天守护。工作日上班时间、每晚睡前，这类需求打开它",
+                icon = Icons.Rounded.Schedule,
+                checked = scheduleEnabled,
+                onCheckedChange = { scheduleEnabled = it; prefs.scheduleEnabled = it }
+            )
+            AnimatedVisibility(visible = scheduleEnabled) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TimeCell("开始", GuardSchedule.formatHm(schedStart), Modifier.weight(1f)) { pickingStart = true }
+                        TimeCell(
+                            if (schedEnd <= schedStart && schedEnd != schedStart) "结束（次日）" else "结束",
+                            GuardSchedule.formatHm(schedEnd), Modifier.weight(1f)
+                        ) { pickingEnd = true }
+                    }
+                    if (schedStart == schedEnd) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("开始和结束相同 = 选中的那几天全天守护", fontSize = 12.sp, color = GuardianTextFaint)
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text("守护日", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = GuardianTextFaint)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        GuardSchedule.dayOrder().forEach { (day, label) ->
+                            val on = day in schedDays
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (on) GuardianAccent else GuardianSurface2)
+                                    .clickable {
+                                        val next = if (on) schedDays - day else schedDays + day
+                                        schedDays = next
+                                        prefs.scheduleDays = next
+                                    }
+                                    .padding(vertical = 9.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(label, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = if (on) GuardianBg else GuardianTextDim)
+                            }
+                        }
+                    }
+                    if (schedDays.isEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("一天都没选，守卫不会在任何时候工作", fontSize = 12.sp, color = GuardianDanger)
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        QuickChip("工作时间 · 周一至五 9–18") {
+                            prefs.scheduleStartMinutes = 9 * 60; prefs.scheduleEndMinutes = 18 * 60
+                            prefs.scheduleDays = GuardSchedule.WEEKDAYS
+                            schedStart = 9 * 60; schedEnd = 18 * 60; schedDays = GuardSchedule.WEEKDAYS
+                        }
+                        QuickChip("睡前 · 每天 22–次日 6") {
+                            prefs.scheduleStartMinutes = 22 * 60; prefs.scheduleEndMinutes = 6 * 60
+                            prefs.scheduleDays = MonitorPrefs.ALL_DAYS
+                            schedStart = 22 * 60; schedEnd = 6 * 60; schedDays = MonitorPrefs.ALL_DAYS
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
         // ================= 提醒方式
         SectionLabel("提醒方式")
         GuardianCard(contentPadding = PaddingValues(0.dp)) {
@@ -451,6 +540,23 @@ fun SettingsScreen(perms: PermissionState) {
         Spacer(Modifier.height(32.dp))
     }
 
+    if (pickingStart) {
+        TimePickerDialog(
+            title = "守护开始",
+            initialMinutes = schedStart,
+            onDismiss = { pickingStart = false },
+            onConfirm = { m -> schedStart = m; prefs.scheduleStartMinutes = m; pickingStart = false }
+        )
+    }
+    if (pickingEnd) {
+        TimePickerDialog(
+            title = "守护结束",
+            initialMinutes = schedEnd,
+            onDismiss = { pickingEnd = false },
+            onConfirm = { m -> schedEnd = m; prefs.scheduleEndMinutes = m; pickingEnd = false }
+        )
+    }
+
     if (showVerifyPwd) {
         var input by remember { mutableStateOf("") }
         var error by remember { mutableStateOf(false) }
@@ -568,6 +674,83 @@ private fun PresetCard(preset: Preset, selected: Boolean, onClick: () -> Unit) {
             )
             Spacer(Modifier.height(2.dp))
             Text(preset.summary, fontSize = 12.sp, color = GuardianTextDim, lineHeight = 17.sp)
+        }
+    }
+}
+
+@Composable
+private fun TimeCell(label: String, value: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(GuardianSurface2)
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Text(label, fontSize = 11.sp, color = GuardianTextFaint)
+        Spacer(Modifier.height(2.dp))
+        Text(value, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GuardianAccent)
+    }
+}
+
+@Composable
+private fun QuickChip(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(GuardianAccentSoft)
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = GuardianAccent)
+    }
+}
+
+/** 时间选择：用 Dialog + Surface 自己包 TimePicker，AlertDialog 的宽度装不下表盘。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TimePickerDialog(
+    title: String,
+    initialMinutes: Int,
+    onDismiss: () -> Unit,
+    onConfirm: (Int) -> Unit
+) {
+    val state = rememberTimePickerState(
+        initialHour = initialMinutes / 60,
+        initialMinute = initialMinutes % 60,
+        is24Hour = true
+    )
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = GuardianSurface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, GuardianBorder)
+        ) {
+            Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = GuardianText, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(16.dp))
+                TimePicker(
+                    state = state,
+                    colors = TimePickerDefaults.colors(
+                        clockDialColor = GuardianSurface2,
+                        clockDialSelectedContentColor = GuardianBg,
+                        clockDialUnselectedContentColor = GuardianText,
+                        selectorColor = GuardianAccent,
+                        containerColor = GuardianSurface,
+                        timeSelectorSelectedContainerColor = GuardianAccentSoft,
+                        timeSelectorUnselectedContainerColor = GuardianSurface2,
+                        timeSelectorSelectedContentColor = GuardianAccent,
+                        timeSelectorUnselectedContentColor = GuardianText
+                    )
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("取消", color = GuardianTextDim) }
+                    TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) {
+                        Text("确定", color = GuardianAccent, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }

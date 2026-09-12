@@ -117,6 +117,33 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_LOCKDOWN_MINUTES, 3)
         set(value) = sp.edit().putInt(KEY_LOCKDOWN_MINUTES, value).apply()
 
+    /** 暂停守护到这个时间戳（毫秒）；0 或已过期 = 没暂停。暂停期间不弹不记，已生效的封锁照常 */
+    var pausedUntil: Long
+        get() = sp.getLong(KEY_PAUSED_UNTIL, 0L)
+        set(value) = sp.edit().putLong(KEY_PAUSED_UNTIL, value).apply()
+
+    /** 只在特定时段守护。关 = 全天 */
+    var scheduleEnabled: Boolean
+        get() = sp.getBoolean(KEY_SCHEDULE_ENABLED, false)
+        set(value) = sp.edit().putBoolean(KEY_SCHEDULE_ENABLED, value).apply()
+
+    /** 时段开始，当天第几分钟（0~1439），默认 09:00 */
+    var scheduleStartMinutes: Int
+        get() = sp.getInt(KEY_SCHEDULE_START, 9 * 60)
+        set(value) = sp.edit().putInt(KEY_SCHEDULE_START, value.coerceIn(0, 1439)).apply()
+
+    /** 时段结束，当天第几分钟。小于开始 = 跨夜到次日。默认 22:00 */
+    var scheduleEndMinutes: Int
+        get() = sp.getInt(KEY_SCHEDULE_END, 22 * 60)
+        set(value) = sp.edit().putInt(KEY_SCHEDULE_END, value.coerceIn(0, 1439)).apply()
+
+    /** 守护的星期几，用 java.util.Calendar 的 DAY_OF_WEEK 常量（1=周日 … 7=周六）。默认每天 */
+    var scheduleDays: Set<Int>
+        get() = sp.getStringSet(KEY_SCHEDULE_DAYS, null)
+            ?.mapNotNull { it.toIntOrNull() }?.toSet()
+            ?: ALL_DAYS
+        set(value) = sp.edit().putStringSet(KEY_SCHEDULE_DAYS, value.map { it.toString() }.toSet()).apply()
+
     /** 当前设置对应的强度档位；跟三档预设都不完全一致时返回 CUSTOM。 */
     fun currentPreset(): Preset =
         Preset.entries.firstOrNull { it != Preset.CUSTOM && it.matches(this) } ?: Preset.CUSTOM
@@ -135,27 +162,35 @@ class MonitorPrefs(context: Context) {
         lockdownMinutes = v.lockMinutes
     }
 
-    private companion object {
-        const val KEY_ENABLED = "service_enabled"
-        const val KEY_SCAN_INTERVAL = "screen_scan_interval"
-        const val KEY_KW_INPUT_ONLY = "kw_input_only"
-        const val KEY_OVERLAY_COUNTDOWN = "overlay_countdown"
-        const val KEY_PASS_MINUTES = "pass_minutes"
-        const val KEY_ESC_CD_ENABLED = "escalating_countdown_enabled"
-        const val KEY_CD_MULTIPLIER = "countdown_multiplier"
-        const val KEY_CD_MAX = "countdown_max_seconds"
-        const val KEY_ALERT_VIBRATE = "alert_vibrate"
-        const val KEY_ALERT_SOUND = "alert_sound"
-        const val KEY_ALERT_SOUND_SILENT = "alert_sound_in_silent"
-        const val KEY_ONBOARDING = "onboarding_done"
-        const val KEY_REMINDER_MODE = "reminder_mode"
-        const val KEY_FIXED_REMINDER_ID = "fixed_reminder_id"
-        const val KEY_KW_ENCRYPTED = "kw_encrypted"
-        const val KEY_KW_PASSWORD_HASH = "kw_password_hash"
-        const val KEY_ESC_ENABLED = "escalation_enabled"
-        const val KEY_ESC_THRESHOLD = "escalation_threshold"
-        const val KEY_ESC_WINDOW = "escalation_window_minutes"
-        const val KEY_LOCKDOWN_MINUTES = "lockdown_minutes"
+    companion object {
+        /** Calendar.SUNDAY(1) … Calendar.SATURDAY(7) */
+        val ALL_DAYS: Set<Int> = (1..7).toSet()
+
+        private const val KEY_ENABLED = "service_enabled"
+        private const val KEY_SCAN_INTERVAL = "screen_scan_interval"
+        private const val KEY_KW_INPUT_ONLY = "kw_input_only"
+        private const val KEY_OVERLAY_COUNTDOWN = "overlay_countdown"
+        private const val KEY_PASS_MINUTES = "pass_minutes"
+        private const val KEY_ESC_CD_ENABLED = "escalating_countdown_enabled"
+        private const val KEY_CD_MULTIPLIER = "countdown_multiplier"
+        private const val KEY_CD_MAX = "countdown_max_seconds"
+        private const val KEY_ALERT_VIBRATE = "alert_vibrate"
+        private const val KEY_ALERT_SOUND = "alert_sound"
+        private const val KEY_ALERT_SOUND_SILENT = "alert_sound_in_silent"
+        private const val KEY_ONBOARDING = "onboarding_done"
+        private const val KEY_REMINDER_MODE = "reminder_mode"
+        private const val KEY_FIXED_REMINDER_ID = "fixed_reminder_id"
+        private const val KEY_KW_ENCRYPTED = "kw_encrypted"
+        private const val KEY_KW_PASSWORD_HASH = "kw_password_hash"
+        private const val KEY_ESC_ENABLED = "escalation_enabled"
+        private const val KEY_ESC_THRESHOLD = "escalation_threshold"
+        private const val KEY_ESC_WINDOW = "escalation_window_minutes"
+        private const val KEY_LOCKDOWN_MINUTES = "lockdown_minutes"
+        private const val KEY_PAUSED_UNTIL = "paused_until"
+        private const val KEY_SCHEDULE_ENABLED = "schedule_enabled"
+        private const val KEY_SCHEDULE_START = "schedule_start_minutes"
+        private const val KEY_SCHEDULE_END = "schedule_end_minutes"
+        private const val KEY_SCHEDULE_DAYS = "schedule_days"
     }
 }
 

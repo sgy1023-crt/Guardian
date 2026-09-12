@@ -12,6 +12,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.guard.EscalationTracker
+import com.gangyi.guardian.guard.GuardSchedule
 import com.gangyi.guardian.guard.InterventionCoordinator
 import com.gangyi.guardian.overlay.OverlayController
 import kotlinx.coroutines.CoroutineScope
@@ -141,7 +142,8 @@ class ClipboardWatcherService : AccessibilityService() {
         }
 
         val keywords = keywordCache
-        if (keywords.isEmpty()) {
+        // 暂停中 / 时段外不扫（省电），恢复后屏幕上的词按"新出现"处理
+        if (keywords.isEmpty() || !GuardSchedule.isActive(prefs)) {
             root.recycle()
             return
         }
