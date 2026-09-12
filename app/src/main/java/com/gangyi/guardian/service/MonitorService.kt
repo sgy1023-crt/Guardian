@@ -13,15 +13,12 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.gangyi.guardian.MainActivity
 import com.gangyi.guardian.R
-import com.gangyi.guardian.data.MonitorPrefs
-import com.gangyi.guardian.data.MODE_FIXED
 import com.gangyi.guardian.data.db.GuardianRepository
-import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.detect.ForegroundAppDetector
-import com.gangyi.guardian.guard.CountdownEscalator
 import com.gangyi.guardian.guard.EscalationTracker
-import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
+import com.gangyi.guardian.guard.InterventionCoordinator
 import com.gangyi.guardian.overlay.OverlayController
+import com.gangyi.guardian.permission.Permissions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,14 +30,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 守卫核心前台服务：常驻通知保活，协程每秒轮询前台 App，
- * 命中监控列表且过了冷却期则弹出停顿弹窗。
+ * 守卫核心前台服务：常驻通知保活，协程每秒轮询前台 App。
+ *
+ * 每一轮做四件事，顺序就是优先级：
+ * 1. 前台换人 → 收掉绑在别的包上的弹窗（走人免费）、清掉别的包的退出宽限（守信）
+ * 2. 前台是被封锁的 App → 踢回桌面 / 补一堵墙（不看监控列表，封锁对"当时那个包"生效）
+ * 3. 前台是"说了退出却没走"的 App → 失信补弹（任何包，不限监控列表）
+ * 4. 前台是监控列表里的 App 且没有通行证、不在宽限期、当前没弹窗 → 弹停顿窗
+ *
+ * 弹出来之后用户点什么、怎么记账、什么时候封锁，全在 InterventionCoordinator，
+ * 这里不碰。
  */
 class MonitorService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var loopJob: Job? = null
-    private lateinit var prefs: MonitorPrefs
     private lateinit var repo: GuardianRepository
     private lateinit var overlay: OverlayController
     private lateinit var powerManager: PowerManager
@@ -55,13 +59,15 @@ class MonitorService : Service() {
     /** 上一轮轮询的前台包名。包名变化 = 用户离开过又进来（封锁要立刻响应） */
     private var lastForegroundPkg: String? = null
 
+    private var pollCount = 0L
+
     override fun onCreate() {
         super.onCreate()
-        prefs = MonitorPrefs(this)
         repo = GuardianRepository(this)
         overlay = OverlayController.get(this)
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         EscalationTracker.init(this)
+        InterventionCoordinator.init(this)
         startForeground(NOTIF_ID, buildNotification())
         scope.launch {
             repo.monitoredPackages.collect { monitoredPkgs = it.toSet() }
@@ -76,107 +82,101 @@ class MonitorService : Service() {
     private fun startLoop() {
         if (loopJob?.isActive == true) return
         loopJob = scope.launch {
-            // 每个被监控 App 各自记一份"上次触发时间"，
-            // 这样冷却完全基于时间，离开/回来都不会丢冷却进度。
-            val lastTriggerAtByPkg = HashMap<String, Long>()
             while (isActive) {
-                // 息屏：不查询不弹窗，收起已有弹窗，降频省电
+                // 息屏：不查询不弹窗，收起已有弹窗（按"离开"记），降频省电
                 if (!powerManager.isInteractive) {
                     if (overlay.isShowing) {
-                        withContext(Dispatchers.Main) {
-                            overlay.dismiss(OverlayController.SOURCE_APP)
-                        }
+                        withContext(Dispatchers.Main) { overlay.dismissAll() }
                     }
                     delay(SCREEN_OFF_POLL_MS)
                     continue
                 }
 
-                val pkg = ForegroundAppDetector.getForegroundPackage(this@MonitorService)
+                pollCount++
+                if (pollCount % PRUNE_EVERY_POLLS == 0L) {
+                    EscalationTracker.pruneExpired()
+                    // 权限被 ROM 悄悄收回是国产机常态，静默失效比不工作更糟——每 30 秒核对一次
+                    if (!Permissions.hasUsageAccess(this@MonitorService)) {
+                        ForegroundAppDetector.reset()
+                        InterventionCoordinator.notifyPermissionLost("用量访问")
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+                    if (!Permissions.hasOverlay(this@MonitorService)) {
+                        InterventionCoordinator.notifyPermissionLost("悬浮窗")
+                    }
+                }
 
-                // 记是否"刚闯入"：跟前一轮包名不同，说明离开过又进来。
-                // 封锁只挡这一个动作——见下方节流逻辑。
+                val pkg = ForegroundAppDetector.getForegroundPackage(this@MonitorService)
                 val isNewEntry = pkg != lastForegroundPkg
                 lastForegroundPkg = pkg
 
-                // 封锁优先于一切：被封的 App 一露头就踢回桌面，连弹窗判定都不用走。
-                // 注意这里不看 monitoredPkgs——封锁是对"当时那个前台包"生效的，
-                // 哪怕用户事后把它从监控列表删了，封锁期内照样踢。
+                // 1. 前台换人：走人免费、守信不追究
+                if (overlay.isShowing) {
+                    withContext(Dispatchers.Main) { overlay.dismissIfBoundToOther(pkg) }
+                }
+                EscalationTracker.clearGraceExcept(pkg)
+
+                if (pkg == null || pkg == packageName) {
+                    delay(POLL_INTERVAL_MS)
+                    continue
+                }
+
+                // 2. 封锁：只在包名"刚由系统事件确认过"时执法。
+                //    缓存里可能是过期包名——拿过期值去踢人，最坏情况是人在桌面上被反复"踢回桌面"。
                 if (EscalationTracker.isLocked(pkg)) {
-                    val now = System.currentTimeMillis()
-                    val remaining = EscalationTracker.lockRemainingMs(pkg)
-                    // 节流只防"人停在 App 里不动时每秒踢一次"的闪屏（3 秒一次观察期）。
-                    // 但**重新闯入必须立刻踢**——用户退到桌面再点开，要的就是
-                    // "一点就回桌面"的体验，不能被节流放行。
-                    if (isNewEntry || now - lastKickAt > KICK_THROTTLE_MS) {
-                        lastKickAt = now
-                        val kicked = ClipboardWatcherService.kickToHome()
-                        withContext(Dispatchers.Main) {
-                            overlay.showLockdown(remaining, kicked)
-                        }
-                        Log.d(TAG, "封锁拦截 pkg=$pkg 剩余=${remaining / 1000}s 踢出=$kicked")
-                    } else if (!overlay.isShowing) {
-                        // 兜底：无障碍掉线踢不动人时，用户还留在被封 App 里，
-                        // 而且可能刚把封锁窗点掉了。这里立刻补一层盖回去，
-                        // 让"进不去"这件事不完全依赖无障碍（悬浮窗权限比它稳得多）。
-                        withContext(Dispatchers.Main) {
-                            overlay.showLockdown(remaining, kicked = false)
+                    if (ForegroundAppDetector.isFreshlyConfirmed()) {
+                        val now = System.currentTimeMillis()
+                        // 重新闯入必须立刻踢；停在里面不动时 3 秒一次，防闪屏
+                        if (isNewEntry || now - lastKickAt > KICK_THROTTLE_MS) {
+                            lastKickAt = now
+                            withContext(Dispatchers.Main) {
+                                InterventionCoordinator.showLockdown(pkg, kick = true)
+                            }
+                            Log.d(TAG, "封锁拦截 pkg=$pkg 剩余=${EscalationTracker.lockRemainingMs(pkg) / 1000}s")
+                        } else if (!overlay.isShowing) {
+                            // 踢不动（无障碍掉线/ROM 拦了）时人还在里面，补一堵墙
+                            withContext(Dispatchers.Main) {
+                                InterventionCoordinator.showLockdown(pkg, kick = false)
+                            }
                         }
                     }
                     delay(POLL_INTERVAL_MS)
                     continue
                 }
 
-                val hit = pkg != null && pkg in monitoredPkgs && pkg != packageName
-
-                if (hit) {
-                    val now = System.currentTimeMillis()
-                    // 递增模式下冷却让位：冷却 30 秒会把第二次弹窗吃掉，
-                    // 翻倍就永远触发不了。此时改用 CountdownEscalator 的最小间隔（3 秒），
-                    // 它只防轮询抖动，"隔多久算连续挣扎"交给递增间隔那一项管。
-                    val escalating = prefs.escalatingCountdownEnabled
-                    val lastAt = lastTriggerAtByPkg[pkg] ?: 0L
-                    val freshTrigger = if (escalating) {
-                        CountdownEscalator.minGapPassed(pkg ?: "", now)
-                    } else {
-                        now - lastAt > prefs.cooldownSeconds * 1000L
-                    }
-                    if (freshTrigger && !overlay.isShowing) {
-                        lastTriggerAtByPkg[pkg!!] = now
-                        // 记一次触发；窗口内攒够次数就升级为封锁。
-                        // 放在这个 if 里面 = 一次真实弹窗算一次，不会被轮询空转刷计数。
-                        //
-                        // 只在包名"刚被系统事件确认过"时才记：沿用缓存的值可能已经过期，
-                        // 拿它去攒计数会记到错的 App 头上，最坏情况是封错对象。
-                        // 漏记一次只是晚一轮封锁，封错却会让用户彻底不信这个功能。
-                        val shouldLock = ForegroundAppDetector.isFreshlyConfirmed() &&
-                            EscalationTracker.recordTrigger(pkg)
-                        if (shouldLock) {
-                            val remaining = EscalationTracker.lockRemainingMs(pkg)
-                            val kicked = ClipboardWatcherService.kickToHome()
-                            lastKickAt = now
-                            withContext(Dispatchers.Main) {
-                                overlay.showLockdown(remaining, kicked)
-                            }
-                            launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
-                            Log.d(TAG, "升级封锁 pkg=$pkg 踢出=$kicked")
-                        } else {
-                            val reminder = pickReminder()
-                            // 连续挣扎时倒计时翻倍：15 → 30 → 60…
-                            val seconds = CountdownEscalator.nextCountdown(
-                                this@MonitorService, pkg
-                            )
-                            withContext(Dispatchers.Main) {
-                                overlay.show(reminder, OverlayController.SOURCE_APP, seconds)
-                            }
-                            launch { repo.logTrigger(pkg, TriggerLog.TYPE_APP) }
-                        }
-                    }
-                } else {
-                    // 离开被监控 App：收起自己弹的窗（不动关键词弹窗）。冷却时间不重置。
-                    if (overlay.isShowing) {
+                // 3. 失信：说了退出、宽限过了、人还在
+                when (EscalationTracker.consumeExpiredGrace(pkg)) {
+                    is EscalationTracker.ContinueResult.Locked -> {
+                        lastKickAt = System.currentTimeMillis()
                         withContext(Dispatchers.Main) {
-                            overlay.dismiss(OverlayController.SOURCE_APP)
+                            InterventionCoordinator.showLockdown(pkg, kick = true)
                         }
+                        Log.d(TAG, "失信升级封锁 pkg=$pkg")
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+                    is EscalationTracker.ContinueResult.Strike -> {
+                        if (!overlay.isShowing) {
+                            withContext(Dispatchers.Main) {
+                                InterventionCoordinator.showIntervention(
+                                    pkg, OverlayController.SOURCE_APP, brokenPromise = true
+                                )
+                            }
+                        }
+                        delay(POLL_INTERVAL_MS)
+                        continue
+                    }
+                    else -> Unit
+                }
+
+                // 4. 普通停顿：监控列表里、没通行证、不在宽限期、当前没弹窗
+                val hit = pkg in monitoredPkgs &&
+                    !EscalationTracker.hasPass(pkg) &&
+                    !EscalationTracker.inExitGrace(pkg)
+                if (hit && !overlay.isShowing) {
+                    withContext(Dispatchers.Main) {
+                        InterventionCoordinator.showIntervention(pkg, OverlayController.SOURCE_APP)
                     }
                 }
                 delay(POLL_INTERVAL_MS)
@@ -186,7 +186,7 @@ class MonitorService : Service() {
 
     override fun onDestroy() {
         loopJob?.cancel()
-        overlay.dismiss(OverlayController.SOURCE_APP)
+        runCatching { overlay.dismissAll() }
         scope.cancel()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -198,19 +198,6 @@ class MonitorService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    /** 按当前模式取提醒语：固定模式取不到时回退到随机。 */
-    private fun pickReminder(): String {
-        if (prefs.reminderMode == MODE_FIXED) {
-            val id = prefs.fixedReminderId
-            if (id >= 0) {
-                val fixed = repo.getReminderByIdSync(id)?.text
-                if (!fixed.isNullOrBlank()) return fixed
-            }
-        }
-        val list = repo.listRemindersSync()
-        return list.ifEmpty { DEFAULT_REMINDERS }.random()
-    }
 
     private fun buildNotification(): Notification {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -239,6 +226,7 @@ class MonitorService : Service() {
         private const val POLL_INTERVAL_MS = 1000L
         private const val SCREEN_OFF_POLL_MS = 5000L
         private const val KICK_THROTTLE_MS = 3000L
+        private const val PRUNE_EVERY_POLLS = 30L
         private const val TAG = "GuardianMonitor"
 
         fun start(context: Context) {

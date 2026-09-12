@@ -22,6 +22,10 @@ data class Reminder(
     val builtin: Boolean = false
 )
 
+/**
+ * 一次停顿弹窗的记录。弹出时插入，用户做出决定后回填 decision + dismissedAt。
+ * decision 为 null = 弹窗还挂着，或进程被杀没来得及记。
+ */
 @Entity(tableName = "trigger_logs")
 data class TriggerLog(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -29,10 +33,24 @@ data class TriggerLog(
     val triggerType: String,
     val keyword: String?,
     val timestamp: Long = System.currentTimeMillis(),
-    val dismissedAt: Long? = null
+    val dismissedAt: Long? = null,
+    val decision: String? = null
 ) {
     companion object {
         const val TYPE_APP = "APP"
         const val TYPE_CLIPBOARD = "CLIPBOARD"
+
+        /** 点了"继续"，拿到通行证 */
+        const val DECISION_CONTINUE = "CONTINUE"
+        /** 点了"退出" */
+        const val DECISION_EXIT = "EXIT"
+        /** 没做决定就离开了（按 Home / 息屏） */
+        const val DECISION_LEFT = "LEFT"
+        /** 点"继续"时次数用完，被封锁 */
+        const val DECISION_LOCKED = "LOCKED"
+
+        /** 算"拦下"的决定：退出和离开 */
+        fun isBlocked(decision: String?): Boolean =
+            decision == DECISION_EXIT || decision == DECISION_LEFT
     }
 }

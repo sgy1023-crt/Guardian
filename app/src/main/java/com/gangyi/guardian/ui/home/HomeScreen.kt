@@ -2,7 +2,8 @@ package com.gangyi.guardian.ui.home
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,25 +11,24 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Message
-import androidx.compose.material.icons.filled.Apps
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material.icons.rounded.Accessibility
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,213 +37,280 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
+import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.guard.EscalationTracker
-import com.gangyi.guardian.permission.Permissions
+import com.gangyi.guardian.permission.PermissionState
 import com.gangyi.guardian.service.MonitorService
-import com.gangyi.guardian.ui.components.NavCard
+import com.gangyi.guardian.ui.components.AllGrantedRow
+import com.gangyi.guardian.ui.components.GuardianCard
+import com.gangyi.guardian.ui.components.GuardianChip
+import com.gangyi.guardian.ui.components.GuardianSwitch
+import com.gangyi.guardian.ui.components.IconBadge
 import com.gangyi.guardian.ui.components.PermissionRow
+import com.gangyi.guardian.ui.components.RowDivider
+import com.gangyi.guardian.ui.components.ScreenHeader
+import com.gangyi.guardian.ui.components.SectionLabel
+import com.gangyi.guardian.ui.components.StatTile
 import com.gangyi.guardian.ui.theme.GuardianAccent
+import com.gangyi.guardian.ui.theme.GuardianAccentSoft
 import com.gangyi.guardian.ui.theme.GuardianBg
+import com.gangyi.guardian.ui.theme.GuardianDanger
+import com.gangyi.guardian.ui.theme.GuardianDangerSoft
 import com.gangyi.guardian.ui.theme.GuardianSuccess
-import com.gangyi.guardian.ui.theme.GuardianSurface
+import com.gangyi.guardian.ui.theme.GuardianSurface2
 import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
 import com.gangyi.guardian.ui.theme.GuardianTextFaint
+import com.gangyi.guardian.util.InstalledApps
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.util.Calendar
+import java.util.concurrent.TimeUnit
 
 @Composable
 fun HomeScreen(
-    onNavigateApps: () -> Unit,
-    onNavigateKeywords: () -> Unit,
-    onNavigateReminders: () -> Unit,
-    onNavigateStats: () -> Unit,
-    onNavigateSettings: () -> Unit,
+    perms: PermissionState,
     onRequestUsageAccess: () -> Unit,
     onRequestOverlay: () -> Unit,
-    onRequestAccessibility: () -> Unit
+    onRequestAccessibility: () -> Unit,
+    onGoRules: () -> Unit
 ) {
     val context = LocalContext.current
     val prefs = remember { MonitorPrefs(context) }
     val repo = remember { GuardianRepository(context) }
 
     var serviceRunning by remember { mutableStateOf(prefs.serviceEnabled) }
-    var hasUsage by remember { mutableStateOf(Permissions.hasUsageAccess(context)) }
-    var hasOverlay by remember { mutableStateOf(Permissions.hasOverlay(context)) }
-    var hasAccessibility by remember { mutableStateOf(Permissions.hasAccessibility(context)) }
-    var monitoredCount by remember { mutableIntStateOf(0) }
+    val monitored by repo.monitoredPackages.collectAsState(initial = emptyList())
+    val keywords by repo.keywords.collectAsState(initial = emptyList())
 
-    val scope = rememberCoroutineScope()
+    val todayStart = remember { startOfToday() }
+    val todayLogs by repo.observeLogsSince(todayStart).collectAsState(initial = emptyList())
+    val todayCount = todayLogs.size
+    val decided = todayLogs.count { it.decision != null }
+    val blocked = todayLogs.count { TriggerLog.isBlocked(it.decision) }
 
-    // 初加载时异步读 Room 获取监控数
-    DisposableEffect(Unit) {
-        val job = scope.launch(Dispatchers.IO) {
-            val count = repo.listMonitoredPackages().size
-            withContext(Dispatchers.Main) { monitoredCount = count }
-        }
-        onDispose { job.cancel() }
+    var streak by remember { mutableIntStateOf(0) }
+    LaunchedEffect(todayLogs.size) {
+        streak = withContext(Dispatchers.IO) { computeStreak(repo, todayStart) }
     }
 
-    // 从权限设置页/选 App 页回来时刷新状态
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hasUsage = Permissions.hasUsageAccess(context)
-                hasOverlay = Permissions.hasOverlay(context)
-                hasAccessibility = Permissions.hasAccessibility(context)
-                scope.launch(Dispatchers.IO) {
-                    val count = repo.listMonitoredPackages().size
-                    withContext(Dispatchers.Main) { monitoredCount = count }
-                }
-                serviceRunning = prefs.serviceEnabled
-                // 每次回到主界面时自动兜底拉起服务（APK 更新/系统杀进程后 prefs 记得开但服务早就死了）
-                if (prefs.serviceEnabled && hasUsage && hasOverlay) {
-                    MonitorService.start(context)
-                }
-            }
+    // 封锁横幅每秒刷新剩余时间
+    var locks by remember { mutableStateOf(EscalationTracker.activeLocks()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            locks = EscalationTracker.activeLocks()
+            delay(1000L)
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val canStart = hasUsage && hasOverlay && monitoredCount > 0
+    val hasRules = monitored.isNotEmpty() || keywords.isNotEmpty()
+    val canStart = perms.requiredGranted && hasRules
+    val preset = remember(prefs.currentPreset()) { prefs.currentPreset() }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(GuardianBg)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 32.dp)
+            .padding(horizontal = 20.dp)
     ) {
-        Text("守卫", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = GuardianText)
-        Text("Guardian", fontSize = 14.sp, color = GuardianTextDim)
+        Spacer(Modifier.height(20.dp))
+        ScreenHeader("守卫", "帮你守住专注")
+        Spacer(Modifier.height(20.dp))
 
-        Spacer(Modifier.height(40.dp))
-
-        // 总开关
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(GuardianSurface)
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // ---- 状态主卡
+        GuardianCard(
+            glowColor = if (serviceRunning) GuardianAccent else null,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp)
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("守护开关", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = GuardianText)
-                Text(
-                    when {
-                        serviceRunning -> "正在守护 · 监控 $monitoredCount 个应用"
-                        !hasUsage -> "需要授予用量访问权限"
-                        !hasOverlay -> "需要授予悬浮窗权限"
-                        monitoredCount == 0 -> "请先选择要监控的 App"
-                        else -> "已关闭"
-                    },
-                    fontSize = 13.sp, color = GuardianTextDim
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(if (serviceRunning) GuardianSuccess else GuardianTextFaint)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        when {
+                            serviceRunning -> "守护中"
+                            !perms.usage || !perms.overlay -> "还没准备好"
+                            !hasRules -> "还没有规则"
+                            else -> "已暂停"
+                        },
+                        fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GuardianText
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        when {
+                            !perms.usage -> "需要开启「用量访问」权限"
+                            !perms.overlay -> "需要开启「悬浮窗」权限"
+                            !hasRules -> "去「规则」里选几个应用或关键词"
+                            else -> "${monitored.size} 个应用 · ${keywords.size} 个关键词 · ${preset.label}强度"
+                        },
+                        fontSize = 13.sp, color = GuardianTextDim
+                    )
+                }
+                GuardianSwitch(
+                    checked = serviceRunning,
+                    enabled = canStart || serviceRunning,
+                    onCheckedChange = { on ->
+                        if (on && !canStart) {
+                            val msg = when {
+                                !perms.usage -> "请先开启用量访问权限"
+                                !perms.overlay -> "请先开启悬浮窗权限"
+                                else -> "请先添加要监控的应用或关键词"
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            return@GuardianSwitch
+                        }
+                        // 封锁期内不许关守护——否则关掉开关就能绕过封锁
+                        if (!on && EscalationTracker.anyActiveLock()) {
+                            Toast.makeText(context, "封锁期间无法关闭守护，等封锁结束再说", Toast.LENGTH_SHORT).show()
+                            return@GuardianSwitch
+                        }
+                        serviceRunning = on
+                        prefs.serviceEnabled = on
+                        if (on) MonitorService.start(context) else MonitorService.stop(context)
+                    }
                 )
             }
-            Switch(
-                checked = serviceRunning,
-                enabled = canStart || serviceRunning,
-                onCheckedChange = { on ->
-                    if (on && !canStart) {
-                        val msg = when {
-                            !hasUsage -> "请先授予用量访问权限"
-                            !hasOverlay -> "请先授予悬浮窗权限"
-                            monitoredCount == 0 -> "请先选择要监控的 App"
-                            else -> "尚未满足启动条件"
-                        }
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                        return@Switch
-                    }
-                    // 封锁期内不许关守护——否则关掉开关就能绕过封锁，
-                    // 整个"防自我欺骗"就白做了。
-                    if (!on && EscalationTracker.anyActiveLock()) {
-                        Toast.makeText(
-                            context,
-                            "封锁期间无法关闭守护，等封锁结束再说",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        return@Switch
-                    }
-                    serviceRunning = on
-                    prefs.serviceEnabled = on
-                    // 同步写 Prefs（供 BootReceiver/Worker 读）和 Room（供 MonitorService 读）
-                    if (on) MonitorService.start(context) else MonitorService.stop(context)
-                },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = GuardianBg,
-                    checkedTrackColor = GuardianAccent,
-                    uncheckedThumbColor = GuardianTextDim,
-                    uncheckedTrackColor = GuardianSurface
+
+            Spacer(Modifier.height(18.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatTile("今日停顿", "$todayCount", Modifier.weight(1f), unit = "次")
+                StatTile(
+                    "今日拦下",
+                    if (decided == 0) "—" else "${(blocked * 100 / decided)}",
+                    Modifier.weight(1f),
+                    unit = if (decided == 0) null else "%",
+                    accent = if (decided > 0 && blocked * 2 >= decided) GuardianSuccess else GuardianText
                 )
-            )
+                StatTile("连续清醒", "$streak", Modifier.weight(1f), unit = "天", accent = GuardianAccent)
+            }
+        }
+
+        // ---- 封锁横幅
+        if (locks.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            val now = System.currentTimeMillis()
+            GuardianCard(background = GuardianDangerSoft, bordered = false, contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp)) {
+                locks.entries.sortedBy { it.value }.forEachIndexed { i, (pkg, until) ->
+                    if (i > 0) Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Rounded.Lock, tint = GuardianDanger, background = GuardianDanger.copy(alpha = 0.15f), size = 36.dp, iconSize = 18.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(InstalledApps.label(context, pkg), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = GuardianText)
+                            Text("封锁中，打开会被送回桌面", fontSize = 12.sp, color = GuardianTextDim)
+                        }
+                        Text(formatMmSs(until - now), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = GuardianDanger)
+                    }
+                }
+            }
         }
 
         Spacer(Modifier.height(24.dp))
 
-        // 权限状态
-        Text("权限状态", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianTextFaint)
-        Spacer(Modifier.height(10.dp))
+        // ---- 权限
+        SectionLabel("权限")
+        GuardianCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+            if (perms.usage && perms.overlay && perms.accessibility) {
+                AllGrantedRow("权限已就绪，守卫可以完整工作")
+            } else {
+                PermissionRow(
+                    Icons.Rounded.Visibility, "用量访问",
+                    "知道你正在用哪个应用", perms.usage, onRequestUsageAccess
+                )
+                RowDivider(66.dp)
+                PermissionRow(
+                    Icons.Rounded.Layers, "悬浮窗",
+                    "在任何应用上方弹出停顿点", perms.overlay, onRequestOverlay
+                )
+                RowDivider(66.dp)
+                PermissionRow(
+                    Icons.Rounded.Accessibility, "无障碍",
+                    "识别你输入的关键词；封锁时送你回桌面", perms.accessibility, onRequestAccessibility
+                )
+            }
+        }
 
-        PermissionRow("用量访问", hasUsage) { onRequestUsageAccess() }
-        Spacer(Modifier.height(8.dp))
-        PermissionRow("悬浮窗", hasOverlay) { onRequestOverlay() }
-        Spacer(Modifier.height(8.dp))
-        PermissionRow("无障碍（剪贴板监控）", hasAccessibility) { onRequestAccessibility() }
+        Spacer(Modifier.height(24.dp))
 
-        Spacer(Modifier.height(32.dp))
-
-        NavCard(
-            icon = Icons.Filled.Apps,
-            title = "监控列表",
-            subtitle = "已选 $monitoredCount 个应用",
-            onClick = onNavigateApps
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        NavCard(
-            icon = Icons.Filled.Key,
-            title = "关键词管理",
-            subtitle = "屏幕出现关键词时弹出提醒",
-            onClick = onNavigateKeywords
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        NavCard(
-            icon = Icons.AutoMirrored.Filled.Message,
-            title = "提醒语管理",
-            subtitle = "弹窗提醒语：随机抽取或固定一条",
-            onClick = onNavigateReminders
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        NavCard(
-            icon = Icons.Filled.BarChart,
-            title = "统计",
-            subtitle = "查看你的自律数据",
-            onClick = onNavigateStats
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        NavCard(
-            icon = Icons.Filled.Settings,
-            title = "设置",
-            subtitle = "冷却、封锁强度、数据导出",
-            onClick = onNavigateSettings
-        )
+        // ---- 机制说明：非技术用户也要一眼看懂"它会怎么对我"
+        SectionLabel("它怎么工作")
+        GuardianCard(onClick = onGoRules) {
+            StepRow(1, "打开监控的应用、或打出关键词", "弹出停顿点，先冷静 ${prefs.overlayCountdownSeconds} 秒")
+            Spacer(Modifier.height(12.dp))
+            StepRow(2, "「退出」永远免费", "「继续」记一次，放行 ${prefs.passMinutes} 分钟不打扰")
+            Spacer(Modifier.height(12.dp))
+            if (prefs.escalationEnabled) {
+                StepRow(
+                    3, "${prefs.escalationWindowMinutes} 分钟内第 ${prefs.escalationThreshold} 次继续",
+                    "送回桌面并封锁 ${prefs.lockdownMinutes} 分钟，期间打不开"
+                )
+            } else {
+                StepRow(3, "不会封锁", "当前是温和模式，只提醒不拦")
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                GuardianChip("${preset.label}强度", GuardianAccent, GuardianAccentSoft)
+                Spacer(Modifier.width(8.dp))
+                Text("在「设置」里一键切换", fontSize = 12.sp, color = GuardianTextFaint)
+            }
+        }
 
         Spacer(Modifier.height(32.dp))
     }
+}
+
+@Composable
+private fun StepRow(n: Int, title: String, desc: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(GuardianSurface2),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("$n", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = GuardianAccent)
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = GuardianText)
+            Text(desc, fontSize = 12.sp, color = GuardianTextDim, lineHeight = 17.sp)
+        }
+    }
+}
+
+internal fun startOfToday(): Long {
+    val cal = Calendar.getInstance()
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    return cal.timeInMillis
+}
+
+/** 连续清醒 = 从今天往回数，连续多少天完全没有触发记录。 */
+internal suspend fun computeStreak(repo: GuardianRepository, todayStart: Long): Int {
+    val lastTs = repo.lastTimestamp() ?: return 0
+    val cal = Calendar.getInstance()
+    cal.timeInMillis = lastTs
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    return ((todayStart - cal.timeInMillis) / TimeUnit.DAYS.toMillis(1)).toInt().coerceAtLeast(0)
+}
+
+internal fun formatMmSs(ms: Long): String {
+    val s = (ms / 1000).coerceAtLeast(0)
+    return "%02d:%02d".format(s / 60, s % 60)
 }

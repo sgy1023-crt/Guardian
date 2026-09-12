@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">守卫</string>
-    <string name="accessibility_description">守卫需要无障碍权限来读取当前屏幕上的文字，从而在屏幕出现你自己设定的关键词时弹出"停顿点"提醒，并在你反复触发提醒时把你送回桌面。所有文字只在本机内存中比对，不保存、不联网、不上传。</string>
-    <string name="accessibility_summary">屏幕出现关键词时提醒，反复触发时送回桌面</string>
+    <string name="accessibility_description">守卫需要无障碍权限做两件事：一、读取你正在输入的文字，在你打出自己设定的关键词时弹出"停顿点"提醒；二、在你反复选择继续、触发封锁时，把你送回桌面。所有文字只在本机内存中比对，不保存、不联网、不上传。</string>
+    <string name="accessibility_summary">输入关键词时提醒；封锁时送回桌面</string>
 </resources>

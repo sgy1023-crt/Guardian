@@ -158,3 +158,23 @@ object Permissions {
         ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
     }
 }
+
+/** 一次性读出的权限快照，Activity 层在 ON_RESUME 刷新，各页面共用。 */
+data class PermissionState(
+    val usage: Boolean,
+    val overlay: Boolean,
+    val accessibility: Boolean,
+    val battery: Boolean
+) {
+    val requiredGranted: Boolean get() = usage && overlay
+    val allGranted: Boolean get() = usage && overlay && accessibility && battery
+
+    companion object {
+        fun read(context: Context): PermissionState = PermissionState(
+            usage = Permissions.hasUsageAccess(context),
+            overlay = Permissions.hasOverlay(context),
+            accessibility = Permissions.hasAccessibility(context),
+            battery = Permissions.isIgnoringBatteryOptimizations(context)
+        )
+    }
+}

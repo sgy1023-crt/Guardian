@@ -2,6 +2,7 @@ package com.gangyi.guardian.overlay
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.os.Build
@@ -17,12 +18,11 @@ import com.gangyi.guardian.data.MonitorPrefs
  * 为什么要这个：纯视觉弹窗太容易被无视——人可以眼睛扫过去、手指条件反射点掉，
  * 大脑根本没参与。加一层听觉/触觉信号，才会真的"愣一下"。
  *
- * **声音走闹钟通道（USAGE_ALARM）**，这是刻意的：
- * 手机长期静音是常态，普通通知音在静音下根本不响，那这个功能就等于没有。
- * 闹钟通道在静音/振动模式下依然出声（Android 就是这么设计的，防止静音后睡过头），
- * 才能保证"该响的时候一定响"。
+ * **声音默认跟随系统铃声模式**（静音/振动时不响，只振动）。
+ * 用户在设置里打开"静音也响"后才走闹钟通道（USAGE_ALARM）——那时静音也会出声。
+ * 自律工具在会议室里因为打开微信"叮"一声，是卸载级的体验，所以这必须是用户自己开的选项。
  *
- * 但音量单独压低到 35%，不跟系统闹钟音量走——否则会像闹铃一样炸出来，
+ * 音量单独压低到 35%，不跟系统闹钟音量走——否则会像闹铃一样炸出来，
  * 在公共场合很尴尬。目标是"自己听得清、旁人不注意"。
  *
  * 用系统自带音色而非自带音频文件：不增加 APK 体积，而且这声音本来就在
@@ -55,7 +55,20 @@ object AlertFeedback {
     private fun fire(context: Context, pattern: LongArray, lockdown: Boolean) {
         val prefs = MonitorPrefs(context)
         if (prefs.alertVibrate) vibrate(context, pattern, lockdown)
-        if (prefs.alertSound) playTone(context, lockdown)
+        if (prefs.alertSound && shouldPlaySound(context, prefs)) {
+            playTone(context, lockdown, forceInSilent = prefs.alertSoundInSilent)
+        }
+    }
+
+    /**
+     * 默认跟随系统铃声模式：静音/振动模式下不出声。
+     * 自律工具在会议室里因为打开微信"叮"一声，是卸载级的体验——
+     * "静音也响"必须是用户自己打开的选项。
+     */
+    private fun shouldPlaySound(context: Context, prefs: MonitorPrefs): Boolean {
+        if (prefs.alertSoundInSilent) return true
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return true
+        return am.ringerMode == AudioManager.RINGER_MODE_NORMAL
     }
 
     private fun vibrate(context: Context, pattern: LongArray, lockdown: Boolean) {
@@ -85,13 +98,12 @@ object AlertFeedback {
     /**
      * 播放提示音。
      *
-     * 走 USAGE_ALARM 通道：手机静音时依然出声。这是这个功能的命门——
-     * 长期静音是常态，若跟随静音，声音提醒等于默认关闭。
+     * forceInSilent 时走 USAGE_ALARM 通道（静音也响），否则走通知通道跟随系统。
      *
      * 用 MediaPlayer 而非 RingtoneManager.getRingtone().play()：
-     * 后者没法精确控音量，会直接用系统闹钟音量炸出来。这里手动压到 35%。
+     * 后者没法精确控音量，会直接用系统音量炸出来。这里手动压到 35%。
      */
-    private fun playTone(context: Context, lockdown: Boolean) {
+    private fun playTone(context: Context, lockdown: Boolean, forceInSilent: Boolean) {
         runCatching {
             // 通知音短促清脆，适合做提示；封锁时用同一个音色但音量抬高，
             // 不用闹钟音色是因为那个通常是长循环铃声，掐断了也突兀。
@@ -104,8 +116,8 @@ object AlertFeedback {
             MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
-                        // ALARM 通道：静音模式下照样响
-                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        // 只有用户明确要"静音也响"才走 ALARM 通道，否则走通知通道跟随系统
+                        .setUsage(if (forceInSilent) AudioAttributes.USAGE_ALARM else AudioAttributes.USAGE_NOTIFICATION)
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
                 )

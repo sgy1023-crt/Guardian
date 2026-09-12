@@ -49,6 +49,12 @@ object ForegroundAppDetector {
     fun isFreshlyConfirmed(): Boolean =
         lastConfirmedAt > 0 && System.currentTimeMillis() - lastConfirmedAt <= FRESH_WINDOW_MS
 
+    /** 用量权限被收回时调用：缓存里的包名已经没有任何依据，不能再拿来弹窗。 */
+    fun reset() {
+        lastKnown = null
+        lastConfirmedAt = 0L
+    }
+
     @Volatile
     private var lastConfirmedAt = 0L
 

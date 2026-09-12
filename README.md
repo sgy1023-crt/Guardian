@@ -1,22 +1,32 @@
 # 守卫 Guardian
 
-> Android 自律提醒工具。打开指定 App 或屏幕出现关键词时，弹"停顿点"悬浮窗提醒你清醒一下。不锁机、只提醒。对标 [one sec](https://one-sec.app/)。
+> Android 自律工具。打开指定 App、或打出你设定的关键词时，弹"停顿点"悬浮窗让你冷静一下再决定。退出永远免费，反复选择继续才会被封锁。对标 [one sec](https://one-sec.app/)。
+
+## 它怎么工作
+
+1. 打开被监控的应用、或在输入框里打出关键词 → 弹出停顿点，先冷静几秒（默认 5 秒，越继续越久）
+2. 两个选择：**「退出」随时可点、永远免费**；「继续」要等停顿结束，点了记一次、放行 5 分钟不再打扰
+3. 30 分钟内第 3 次选择继续 → 送回桌面，并把那个应用封锁 3 分钟，期间打开就被送回来
+4. 不做决定直接离开（按 Home、锁屏）也免费—���走人不该被惩罚，留下才有代价
+
+三档强度一键切换：**温和**（只提醒不封）/ **标准**（上面这套）/ **严格**（每次只放行 3 分钟，第 2 次继续就封 10 分钟）。高级参数全部可调。
 
 ## 功能
 
-- **App 触发**：勾选要监督的应用（抖音、微博、B 站……），打开即弹窗
-- **关键词触发**：设置关键词（"游戏"、"无聊"、"再刷一会儿"……），屏幕出现即弹窗
-- **关键词加密模式**：列表遮罩显示，弹窗不显示原文，删除需 4~6 位数字密码——适合你想"忘掉"的关键词
-- **提醒语模式**：随机抽 / 指定固定一条，随意切换
-- **弹窗倒计时**：3~180 秒可调，倒计时结束才能点"我清醒了"
-- **冷却时间**：同一 App / 关键词触发后 5~300 秒内不再重复弹（设置页可调）
-- **扫描灵敏度**：屏幕文字扫描间隔 1~10 秒可调
-- **统计**：今日提醒次数、7 日趋势柱状图、Top App、连续清醒天数
-- **数据导出**：触发记录一键导出 JSON 分享
-- **保活**：前台服务 + WorkManager + 开机自启，进程被杀会自动拉起
-- **本地运行**：不联网不上传，所有数据只在本地
+- **App 触发**：勾选要监督的应用（抖音、微博、B 站……），打开即弹停顿点
+- **关键词触发**：设置关键词，默认只在你**自己打出来**时触发；别人发来的、页面上出现的不算（可切成整屏匹配）
+- **通行证与封锁**：只有你点「继续」才计数；反复继续才封锁；封锁状态持久化，杀进程重启都绕不过
+- **失信惩罚**：点了「退出」却赖着不走 → 按「继续」记一次
+- **拦下率统计**：每次停顿你选了什么都记下来——退出 / 离开 / 继续 / 封锁，7 天 / 30 天堆叠趋势图，最常触发的应用
+- **关键词加密模式**：列表遮罩显示，弹窗不显示原文，删除和导出都要密码——适合你想"忘掉"的关键词
+- **提醒语**：随机抽 / 固定一条，可自定义
+- **体感提醒**：振动 + 提示音（默认跟随系统静音，"静音也响"可选���
+- **权限守护**：运行中权限被系统收回会发通知，不会静默失效
+- **本地运行**：不联网不上传，所有数据只在本地；导出 JSON 随你处置
 
 ## 截图
+
+> v1.2 界面已全面重做，截图待更新。
 
 | 停顿弹窗 · 触发实拍 | 提醒语 · 随机模式 | 提醒语 · 指定模式 |
 |:---:|:---:|:---:|
@@ -51,22 +61,22 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 |------|------|
 | `PACKAGE_USAGE_STATS` | 检测当前前台 App（需手动授权） |
 | `SYSTEM_ALERT_WINDOW` | 在其他 App 之上弹悬浮窗 |
-| `BIND_ACCESSIBILITY_SERVICE` | 扫描屏幕文字匹配关键词 |
+| `BIND_ACCESSIBILITY_SERVICE` | 读取你正在输入的文字匹配关键词；封锁时把你送回桌面 |
 | `FOREGROUND_SERVICE` + `_SPECIAL_USE` | 常驻后台检测 |
-| `POST_NOTIFICATIONS` | 前台服务通知（Android 13+） |
+| `POST_NOTIFICATIONS` | 前台服务通知、权限异常通知（Android 13+） |
 | `RECEIVE_BOOT_COMPLETED` | 开机自启 |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | 关闭电池优化保活 |
 | `QUERY_ALL_PACKAGES` | 列出已安装 App 供勾选 |
+| `VIBRATE` | 弹窗振动 |
 
 所有数据只在本地（Room 数据库 + SharedPreferences），不联网不上传。
 
 ## 首次使用
 
-1. 安装后打开，走完 5 步权限引导
-2. 进 **App 管理** 勾选要监督的应用
-3. 进 **关键词管理** 加你想监督的词
-4. 进 **提醒语管理** 选"随机"或"指定"模式
-5. 回主页打开总开关
+1. 安装后打开，走完 5 步权限引导（前两步必须，无障碍强烈建议——没有它封锁只能挡一堵墙，不能送你回桌面）
+2. 「规则」页勾选要监督的应用、加关键词
+3. 「设置」页选一档强度（默认标准）
+4. 回「守护」页打开总开关
 
 ## 小米/HyperOS 注意事项
 
@@ -77,45 +87,36 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 技术栈
 
-- Kotlin 2.0.21
-- Jetpack Compose（Material3，Compose BOM 2024.12.01）
-- Room 2.6.1
-- AGP 8.13.2 / Gradle 8.13
-- minSdk 26 / targetSdk 35
-- 两套独立监控引擎：UsageStatsManager 前台轮询 + AccessibilityService 全屏文本扫描
+- Kotlin 2.0.21 · Jetpack Compose（Material3，BOM 2024.12.01）· Room 2.6.1
+- AGP 8.13.2 / Gradle 8.13 · minSdk 26 / targetSdk 35
+- 两个监控引擎（UsageStatsManager 前台轮询 + AccessibilityService 输入框文本扫描）共用一个决策中心
 
 ## 架构
 
 ```
-引擎 1：前台 App 检测 → 悬浮窗弹窗
-  MonitorService.kt · 1s 轮询 UsageStatsManager.queryEvents
-  命中 monitored_apps 表 → 弹呼吸圆点 + 倒计时按钮（默认 5s，可调）
-
-引擎 2：屏幕文字扫描 → 悬浮窗弹窗
-  ClipboardWatcherService.kt · 按设置间隔（默认 1.5s）轮询 rootInActiveWindow
-  递归遍历整棵节点树收集 text/contentDescription
-  命中 keywords 表 → 弹同样悬浮窗
-  加密模式开启时：弹窗不显示关键词原文
-
-数据层：Room（MonitoredApp / Keyword / Reminder / TriggerLog）
+引擎 1：前台 App 检测          MonitorService.kt · 1s 轮询 UsageStatsManager.queryEvents
+引擎 2：输入文字扫描           ClipboardWatcherService.kt · 轮询 rootInActiveWindow，默认只收可编辑节点
+          ↓ 该不该弹
+决策中心：InterventionCoordinator + EscalationTracker
+          通行证 / 「继续」计数 / 递增停顿 / 封锁 / 退出宽限 / 失信
+          状态持久化在 EscalationStore（独立 SharedPreferences）
+          ↓
+悬浮窗：OverlayController（进程内单例）· 停顿窗两按钮 · 封锁窗两态（已踢回告知卡 / 未踢回"墙"）
+数据：Room v2（MonitoredApp / Keyword / Reminder / TriggerLog + decision）
 保活：ForegroundService + WorkManager + BootReceiver
-弹窗：WindowManager TYPE_APPLICATION_OVERLAY + ComposeView
-设置：SharedPreferences（MonitorPrefs），密码用 SHA-256 hash 存储
 ```
 
 ## 路线图
 
-- [x] App 触发提醒
-- [x] 关键词触发提醒（全屏扫描）
-- [x] 提醒语随机/指定模式
-- [x] 弹窗倒计时可调（3~180 秒）
-- [x] 关键词加密模式（遮罩 + 密码 + 弹窗不显示原文）
-- [x] 冷却可调（5~300 秒，App 和关键词共用）
-- [x] 扫描灵敏度可调（1~10 秒）
-- [x] 统计 + 数据导出
+- [x] App 触发 / 关键词触发
+- [x] 通行证 + 决定计数 + 递增停顿 + 升级封锁（v1.2 重做，修掉"时间流逝也算挣扎"的死循环）
+- [x] 拦下率统计 + 数据导出
+- [x] 三档强度预设
+- [x] 关键词加密模式
 - [x] 开机自启 + 进程被杀自动拉起
+- [ ] 时间段规则（工作日 9–18 点才监控）
+- [ ] 临时暂停守护 N 小时
 - [ ] 提醒语分类（工作时间用 A 池，睡前用 B 池）
-- [ ] 云同步（用户可选）
 
 ## License
 

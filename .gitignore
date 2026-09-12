@@ -23,3 +23,6 @@ captures/
 CLAUDE.md
 docs/
 截图/
+
+# 本地粘贴的临时文件（含密钥）
+pasted.json

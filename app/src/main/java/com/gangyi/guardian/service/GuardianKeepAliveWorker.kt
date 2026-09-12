@@ -1,9 +1,7 @@
 package com.gangyi.guardian.service
 
-import android.app.ActivityManager
 import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -13,8 +11,17 @@ import androidx.work.WorkManager
 import androidx.work.Worker
 import androidx.work.WorkerParameters
 import com.gangyi.guardian.data.MonitorPrefs
+import com.gangyi.guardian.permission.Permissions
 import java.util.concurrent.TimeUnit
 
+/**
+ * 每 15 分钟检查一次：用户想开着守护、服务却不在了，就拉起来。
+ *
+ * Android 12+ 限制后台启动前台服务，但**持有悬浮窗权限的应用在豁免名单里**
+ * （官方文档 "Exemptions from background start restrictions"）——而悬浮窗正是守卫的必需权限。
+ * 所以这里直接尝试，被拒就记一笔等下次，不再要求"App 必须在前台"
+ * （那个条件下 HomeScreen 早就自己拉过服务了，Worker 等于白跑）。
+ */
 class GuardianKeepAliveWorker(
     context: Context,
     params: WorkerParameters
@@ -23,33 +30,22 @@ class GuardianKeepAliveWorker(
     override fun doWork(): Result {
         val prefs = MonitorPrefs(applicationContext)
         if (!prefs.serviceEnabled) return Result.success()
-
-        if (!isAppInForeground()) {
-            // Android 12+ 不允许后台启动前台服务；不在前台时直接退出，
-            // 让 START_STICKY / BootReceiver / 用户下次进 app 三条路径自然恢复服务。
-            Log.d(TAG, "skip: app not in foreground, will rely on STICKY restart")
+        if (!Permissions.hasUsageAccess(applicationContext) || !Permissions.hasOverlay(applicationContext)) {
+            Log.d(TAG, "skip: required permission missing")
             return Result.success()
         }
 
         return try {
             MonitorService.start(applicationContext)
-            Log.d(TAG, "keep-alive: service started")
+            Log.d(TAG, "keep-alive: service (re)started")
             Result.success()
         } catch (e: ForegroundServiceStartNotAllowedException) {
-            // 系统 Android 12+ 拒绝，不再 retry，避免每 15 分钟刷错误日志
-            Log.w(TAG, "FGS not allowed, deferring to STICKY restart")
+            Log.w(TAG, "FGS not allowed from background, deferring to next resume")
             Result.success()
         } catch (e: Exception) {
             Log.e(TAG, "keep-alive failed", e)
             Result.success()
         }
-    }
-
-    private fun isAppInForeground(): Boolean {
-        val am = applicationContext.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            ?: return false
-        val processes = am.runningAppProcesses ?: return false
-        return processes.any { it.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND }
     }
 
     companion object {

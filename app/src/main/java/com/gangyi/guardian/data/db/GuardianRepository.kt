@@ -5,7 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class GuardianRepository(context: Context) {
@@ -37,13 +37,7 @@ class GuardianRepository(context: Context) {
 
     // ---- App ----
     val monitoredPackages: Flow<List<String>>
-        get() = appDao.observeAll().let { flow ->
-            object : Flow<List<String>> {
-                override suspend fun collect(collector: FlowCollector<List<String>>) {
-                    flow.collect { collector.emit(it.map { a -> a.packageName }) }
-                }
-            }
-        }
+        get() = appDao.observeAll().map { list -> list.map { it.packageName } }
 
     suspend fun listMonitoredPackages(): List<String> = appDao.listPackages()
 
@@ -52,13 +46,7 @@ class GuardianRepository(context: Context) {
 
     // ---- Keyword ----
     val keywords: Flow<List<String>>
-        get() = keywordDao.observeAll().let { flow ->
-            object : Flow<List<String>> {
-                override suspend fun collect(collector: FlowCollector<List<String>>) {
-                    flow.collect { collector.emit(it.map { k -> k.text }) }
-                }
-            }
-        }
+        get() = keywordDao.observeAll().map { list -> list.map { it.text } }
 
     suspend fun listKeywords(): List<String> = keywordDao.listTexts()
     suspend fun addKeyword(text: String) { keywordDao.insert(Keyword(text)) }
@@ -67,9 +55,6 @@ class GuardianRepository(context: Context) {
     // ---- Reminder ----
     val reminders: Flow<List<Reminder>> get() = reminderDao.observeAll()
 
-    suspend fun listReminders(): List<String> = reminderDao.listTexts()
-    fun listRemindersSync(): List<String> = reminderDao.listTextsSync()
-    fun getReminderByIdSync(id: Long): Reminder? = reminderDao.getByIdSync(id)
     suspend fun addReminder(text: String) { reminderDao.insert(Reminder(text = text)) }
     suspend fun updateCustomReminder(id: Long, text: String) { reminderDao.updateCustom(id, text) }
     suspend fun deleteCustomReminder(id: Long) { reminderDao.deleteCustom(id) }
@@ -81,10 +66,16 @@ class GuardianRepository(context: Context) {
         keyword: String? = null
     ): Long = logDao.insert(TriggerLog(packageName = packageName, triggerType = triggerType, keyword = keyword))
 
-    fun observeTopApps(startMs: Long, limit: Int = 5): Flow<List<AppCount>> =
-        logDao.topApps(startMs, limit)
+    suspend fun markDecision(id: Long, decision: String) {
+        logDao.setDecision(id, decision, System.currentTimeMillis())
+    }
 
-    suspend fun listLogsSince(startMs: Long): List<TriggerLog> = logDao.listSince(startMs)
+    fun observeLogsSince(startMs: Long): Flow<List<TriggerLog>> = logDao.observeSince(startMs)
     suspend fun allLogs(): List<TriggerLog> = logDao.listAll()
     suspend fun lastTimestamp(): Long? = logDao.lastTimestamp()
+
+    /** 只保留最近 90 天的记录，别让触发日志无限长。 */
+    suspend fun pruneOldLogs() {
+        logDao.deleteBefore(System.currentTimeMillis() - 90L * 24 * 60 * 60 * 1000)
+    }
 }
