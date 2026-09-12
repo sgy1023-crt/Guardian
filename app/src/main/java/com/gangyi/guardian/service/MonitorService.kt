@@ -60,6 +60,7 @@ class MonitorService : Service() {
     private var lastForegroundPkg: String? = null
 
     private var pollCount = 0L
+    private var accessibilitySeenOn = false
 
     override fun onCreate() {
         super.onCreate()
@@ -104,6 +105,15 @@ class MonitorService : Service() {
                     }
                     if (!Permissions.hasOverlay(this@MonitorService)) {
                         InterventionCoordinator.notifyPermissionLost("悬浮窗")
+                    }
+                    // 无障碍是"曾经在线、现在掉了"才算被收回（HyperOS 常悄悄干这事）；
+                    // 用户从来没开过的话不吵他
+                    val a11y = Permissions.hasAccessibility(this@MonitorService)
+                    if (a11y) {
+                        accessibilitySeenOn = true
+                    } else if (accessibilitySeenOn) {
+                        accessibilitySeenOn = false
+                        InterventionCoordinator.notifyPermissionLost("无障碍")
                     }
                 }
 
