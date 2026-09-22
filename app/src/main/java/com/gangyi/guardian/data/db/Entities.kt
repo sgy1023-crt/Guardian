@@ -48,6 +48,8 @@ data class TriggerLog(
         const val DECISION_LEFT = "LEFT"
         /** 点"继续"时次数用完，被封锁 */
         const val DECISION_LOCKED = "LOCKED"
+        /** 封锁期间紧急解除（要过密码/等待，会被记一笔） */
+        const val DECISION_EMERGENCY = "EMERGENCY"
 
         /** 算"拦下"的决定：退出和离开 */
         fun isBlocked(decision: String?): Boolean =

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,11 +35,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gangyi.guardian.data.Episodes
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.ui.components.EmptyState
@@ -63,16 +66,19 @@ import com.gangyi.guardian.util.InstalledApps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-private data class DayBucket(val label: String, val total: Int, val blocked: Int)
+private data class DayBucket(val label: String, val blocked: Int, val continued: Int) {
+    val total: Int get() = blocked + continued
+}
 
 /**
- * 统计页。最重要的数字不是"弹了几次"，是"弹了之后你多少次没继续"——拦下率。
- * 柱状图每根柱子分两段：下面绿色是拦下的，上面橙色是继续的，一眼看出趋势。
+ * 统计页。最重要的数字不是"弹了几次"，是"每次冲动你忍住了没有"。
+ *
+ * 口径统一走 [Episodes]：同一个 App 15 分钟内的连续触发算一次"冲动"，
+ * 只要里面出现过「继续」就算没拦住。这样数字才不会被"退出又点开"刷高。
  */
 @Composable
 fun StatsScreen() {
@@ -90,14 +96,21 @@ fun StatsScreen() {
         streak = withContext(Dispatchers.IO) { computeStreak(repo, todayStart) }
     }
 
-    val total = logs.size
-    val decided = logs.count { it.decision != null }
-    val blocked = logs.count { TriggerLog.isBlocked(it.decision) }
-    val continued = logs.count { it.decision == TriggerLog.DECISION_CONTINUE }
-    val locked = logs.count { it.decision == TriggerLog.DECISION_LOCKED }
-    val blockRate = if (decided == 0) null else blocked * 100 / decided
+    val episodes = remember(logs) { Episodes.group(logs) }
+    val decidedEpisodes = episodes.count { it.decided }
+    val blockedEpisodes = episodes.count { it.blocked }
+    val continuedEpisodes = episodes.count { it.continued }
+    val blockRate = if (decidedEpisodes == 0) null else blockedEpisodes * 100 / decidedEpisodes
+    val lockCount = logs.count { it.decision == TriggerLog.DECISION_LOCKED }
+    val emergencyCount = logs.count { it.decision == TriggerLog.DECISION_EMERGENCY }
 
-    val buckets = remember(logs, days) { bucketByDay(logs, rangeStart, days) }
+    val buckets = remember(episodes, days) {
+        val raw = Episodes.groupByDay(episodes, rangeStart, days)
+        val fmt = if (days <= 7) SimpleDateFormat("E", Locale.CHINESE) else SimpleDateFormat("M/d", Locale.CHINESE)
+        raw.mapIndexed { i, d ->
+            DayBucket(fmt.format(Date(rangeStart + i * TimeUnit.DAYS.toMillis(1))), d.blocked, d.continued)
+        }
+    }
 
     val topApps = remember(logs) {
         logs.filter { it.packageName != null }
@@ -135,8 +148,9 @@ fun StatsScreen() {
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(
-                    if (blockRate == null) "—" else "$blockRate",
-                    fontSize = 52.sp, fontWeight = FontWeight.Bold,
+                    if (blockRate == null) "暂无" else "$blockRate",
+                    fontSize = if (blockRate == null) 26.sp else 52.sp,
+                    fontWeight = if (blockRate == null) FontWeight.Medium else FontWeight.Bold,
                     color = when {
                         blockRate == null -> GuardianTextFaint
                         blockRate >= 50 -> GuardianSuccess
@@ -151,28 +165,40 @@ fun StatsScreen() {
             }
             Text(
                 when {
-                    blockRate == null -> "还没有做过决定的停顿。弹出停顿点后选「退出」或直接离开，就算拦下一次。"
-                    blockRate >= 70 -> "停顿点弹出后，十次里有七次以上你选择了离开。这就是它存在的意义。"
+                    blockRate == null -> "还没有做过决定的冲动。一次冲动里只要点过「继续」，就算没拦住。"
+                    blockRate >= 70 -> "十次冲动里有七次以上你忍住了。这就是它存在的意义。"
                     blockRate >= 50 -> "一半以上的冲动被你拦下了。继续保持。"
-                    else -> "多数时候你还是选择了继续。可以试试把强度调高一档。"
+                    else -> "多数冲动你还是选择继续了。可以试试把强度调高一档。"
                 },
                 fontSize = 13.sp, color = GuardianTextDim, lineHeight = 19.sp
             )
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("停顿", "$total", Modifier.weight(1f), unit = "次")
-                StatTile("拦下", "$blocked", Modifier.weight(1f), unit = "次", accent = GuardianSuccess)
-                StatTile("继续", "$continued", Modifier.weight(1f), unit = "次", accent = GuardianAccent)
-                StatTile("封锁", "$locked", Modifier.weight(1f), unit = "次", accent = if (locked > 0) GuardianDanger else GuardianText)
+                StatTile("冲动", "${episodes.size}", Modifier.weight(1f), unit = "次")
+                StatTile("拦下", "$blockedEpisodes", Modifier.weight(1f), unit = "次", accent = GuardianSuccess)
+                StatTile("继续", "$continuedEpisodes", Modifier.weight(1f), unit = "次", accent = GuardianAccent)
+                StatTile("封锁", "$lockCount", Modifier.weight(1f), unit = "次", accent = if (lockCount > 0) GuardianDanger else GuardianText)
             }
+            if (emergencyCount > 0) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "其中紧急解锁 $emergencyCount 次（封锁期间手动放行）",
+                    fontSize = 12.sp, color = GuardianTextFaint
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "一次「冲动」= 同一个 App 15 分钟内的连续触发算一次，不是弹了几次窗",
+                fontSize = 11.sp, color = GuardianTextFaint, lineHeight = 16.sp
+            )
         }
 
         Spacer(Modifier.height(24.dp))
 
         // ---- 趋势
-        SectionLabel("每日趋势")
+        SectionLabel("每日冲动")
         GuardianCard {
-            if (total == 0) {
+            if (episodes.isEmpty()) {
                 Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
                     Text("这段时间没有停顿记录", fontSize = 13.sp, color = GuardianTextFaint)
                 }
@@ -181,8 +207,8 @@ fun StatsScreen() {
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     LegendDot(GuardianSuccess, "拦下")
-                    LegendDot(GuardianAccent, "继续 / 封锁")
-                    LegendDot(GuardianSurface3, "未决定")
+                    LegendDot(GuardianAccent, "继续")
+                    LegendDot(GuardianSurface3, "无记录")
                 }
             }
         }
@@ -196,7 +222,7 @@ fun StatsScreen() {
                 EmptyState(Icons.Rounded.BarChart, "暂无数据", "有停顿记录后这里会列出最常触发的应用", Modifier.padding(vertical = 0.dp))
             }
         } else {
-            GuardianCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+            GuardianCard(contentPadding = PaddingValues(0.dp)) {
                 val max = topApps.maxOf { it.second }.coerceAtLeast(1)
                 topApps.forEachIndexed { i, (pkg, count, blockedCount) ->
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -266,7 +292,7 @@ fun StatsScreen() {
 }
 
 @Composable
-private fun LegendDot(color: androidx.compose.ui.graphics.Color, label: String) {
+private fun LegendDot(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(6.dp))
@@ -274,7 +300,7 @@ private fun LegendDot(color: androidx.compose.ui.graphics.Color, label: String) 
     }
 }
 
-/** 堆叠柱状图：下段拦下（绿），上段继续/封锁（橙），未决定的灰。 */
+/** 堆叠柱状图：下段拦下（绿），上段继续（橙）。 */
 @Composable
 private fun StackedBarChart(buckets: List<DayBucket>, showEveryLabel: Boolean) {
     val maxCount = buckets.maxOfOrNull { it.total }?.coerceAtLeast(1) ?: 1
@@ -282,7 +308,7 @@ private fun StackedBarChart(buckets: List<DayBucket>, showEveryLabel: Boolean) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val n = buckets.size
             val w = size.width / n
-            val barW = (w * if (n > 7) 0.62f else 0.5f)
+            val barW = w * if (n > 7) 0.62f else 0.5f
             val topPad = 8f
             val bottomPad = 26f
             val chartH = size.height - topPad - bottomPad
@@ -301,9 +327,8 @@ private fun StackedBarChart(buckets: List<DayBucket>, showEveryLabel: Boolean) {
                 }
                 val unit = chartH / maxCount
                 val blockedH = b.blocked * unit
-                val restH = (b.total - b.blocked) * unit
+                val restH = b.continued * unit
                 val bottom = size.height - bottomPad
-                // 上段（继续/未决定）
                 if (restH > 0f) {
                     drawRoundRect(
                         color = GuardianAccent,
@@ -312,7 +337,6 @@ private fun StackedBarChart(buckets: List<DayBucket>, showEveryLabel: Boolean) {
                         cornerRadius = radius
                     )
                 }
-                // 下段（拦下）
                 if (blockedH > 0f) {
                     drawRoundRect(
                         color = GuardianSuccess,
@@ -336,26 +360,5 @@ private fun StackedBarChart(buckets: List<DayBucket>, showEveryLabel: Boolean) {
                 )
             }
         }
-    }
-}
-
-private fun bucketByDay(logs: List<TriggerLog>, rangeStart: Long, days: Int): List<DayBucket> {
-    val dayMs = TimeUnit.DAYS.toMillis(1)
-    val totals = IntArray(days)
-    val blockedArr = IntArray(days)
-    val cal = Calendar.getInstance()
-    logs.forEach { log ->
-        cal.timeInMillis = log.timestamp
-        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
-        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-        val idx = ((cal.timeInMillis - rangeStart) / dayMs).toInt()
-        if (idx in 0 until days) {
-            totals[idx]++
-            if (TriggerLog.isBlocked(log.decision)) blockedArr[idx]++
-        }
-    }
-    val fmt = if (days <= 7) SimpleDateFormat("E", Locale.CHINESE) else SimpleDateFormat("M/d", Locale.CHINESE)
-    return (0 until days).map { i ->
-        DayBucket(fmt.format(Date(rangeStart + i * dayMs)), totals[i], blockedArr[i])
     }
 }

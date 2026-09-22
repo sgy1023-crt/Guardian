@@ -15,15 +15,19 @@ import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
 import com.gangyi.guardian.data.db.Reminder
 import com.gangyi.guardian.data.db.TriggerLog
+import com.gangyi.guardian.detect.ForegroundAppDetector
 import com.gangyi.guardian.overlay.DEFAULT_REMINDERS
 import com.gangyi.guardian.overlay.InterventionSession
 import com.gangyi.guardian.overlay.OverlayController
 import com.gangyi.guardian.util.InstalledApps
+import com.gangyi.guardian.util.sha256
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 两个监控引擎共用的"弹窗 + 决定处理"入口。
@@ -40,6 +44,9 @@ object InterventionCoordinator {
     private const val ALERT_CHANNEL_ID = "guardian_alerts"
     private const val OVERLAY_FAIL_NOTIF_ID = 2001
     private const val OVERLAY_FAIL_NOTIFY_GAP_MS = 30 * 60_000L
+
+    /** 用 HOME Intent 兜底踢人后，等这么久再确认人到底走没走 */
+    private const val VERIFY_KICK_MS = 800L
 
     private lateinit var appContext: Context
     private lateinit var prefs: MonitorPrefs
@@ -123,13 +130,51 @@ object InterventionCoordinator {
     fun showLockdown(pkg: String, kick: Boolean): Boolean {
         if (!initialized) return false
         val kicked = kick && HomeKicker.kick(appContext)
-        return overlay.showLockdown(
-            pkg = pkg,
-            appLabel = InstalledApps.label(appContext, pkg),
-            remainingMs = EscalationTracker.lockRemainingMs(pkg),
-            kicked = kicked,
-            onHome = { HomeKicker.kick(appContext) }
-        )
+        val shown = renderLockdown(pkg, kicked)
+        // 踢人走的是 HOME Intent 兜底时（无障碍没绑），成不成没法同步知道：
+        // 先立"墙"保证人还在里面时立刻被挡住，800ms 后看一眼前台——
+        // 人真被送走了就换成"已送回桌面"告知卡，免得留一张一秒就消失的红屏闪。
+        if (kick && !kicked && shown) {
+            scope.launch {
+                delay(VERIFY_KICK_MS)
+                withContext(Dispatchers.Main) {
+                    val fg = runCatching { ForegroundAppDetector.getForegroundPackage(appContext) }.getOrNull()
+                    if (fg != pkg) renderLockdown(pkg, kicked = true, feedback = false)
+                }
+            }
+        }
+        return shown
+    }
+
+    private fun renderLockdown(pkg: String, kicked: Boolean, feedback: Boolean = true): Boolean = overlay.showLockdown(
+        pkg = pkg,
+        appLabel = InstalledApps.label(appContext, pkg),
+        remainingMs = EscalationTracker.lockRemainingMs(pkg),
+        kicked = kicked,
+        needsPassword = prefs.keywordPasswordHash.isNotEmpty(),
+        onEmergencyUnlock = { input -> emergencyUnlock(pkg, input) },
+        onHome = { HomeKicker.kick(appContext) },
+        feedback = feedback
+    )
+
+    /**
+     * 紧急解除。给"真的必须用"留的出口：没设密码就是一道 5 秒等待（在弹窗里），
+     * 设了密码就得输密码。解除会写一条 EMERGENCY 记录，统计里看得见——
+     * 能被看见，才不会被滥用。
+     * @return 密码对不对（没设密码时永远 true）
+     */
+    private fun emergencyUnlock(pkg: String, passwordInput: String): Boolean {
+        val hash = prefs.keywordPasswordHash
+        if (hash.isNotEmpty() && sha256(passwordInput.trim()) != hash) return false
+        EscalationTracker.unlockNow(pkg)
+        overlay.dismissCurrent()
+        scope.launch {
+            runCatching {
+                repo.logTrigger(pkg, TriggerLog.TYPE_APP, decision = TriggerLog.DECISION_EMERGENCY)
+            }
+        }
+        Log.w(TAG, "紧急解除封锁 pkg=$pkg")
+        return true
     }
 
     private fun handleContinue(pkg: String, logId: CompletableDeferred<Long>) {

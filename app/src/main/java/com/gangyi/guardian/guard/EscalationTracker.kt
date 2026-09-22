@@ -216,6 +216,16 @@ object EscalationTracker {
         Log.d(TAG, "LOCK pkg=$pkg 时长=${durationMs / 1000}s strike=$strike x$multiplier")
     }
 
+    /**
+     * 紧急解除封锁。给"真的必须用"留的出口——调用方负责先过密码/等待那道门槛。
+     * strike 记忆保留：解一次不会让下次封锁变轻。
+     */
+    fun unlockNow(pkg: String) {
+        if (!initialized) return
+        store.clearLock(pkg)
+        Log.w(TAG, "紧急解除 pkg=$pkg")
+    }
+
     /** 清理到期封锁/通行证，轮询循环里定期调。 */
     fun pruneExpired() {
         if (!initialized) return

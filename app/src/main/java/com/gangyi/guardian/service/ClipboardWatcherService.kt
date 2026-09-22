@@ -155,6 +155,10 @@ class ClipboardWatcherService : AccessibilityService() {
         } finally {
             root.recycle()
         }
+        // 每 75 秒打一条：真机上"为什么没触发"全靠它——能看到扫到了哪个 App、收了多少字
+        if (pollCount % 50 == 0L) {
+            Log.d(TAG, "scan#$pollCount pkg=$rootPkg kw=${keywords.size} inputOnly=${prefs.keywordInputOnly} textLen=${text.length}")
+        }
         if (text.isBlank()) return
 
         val now = System.currentTimeMillis()

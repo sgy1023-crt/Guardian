@@ -40,11 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.gangyi.guardian.data.Episodes
 import com.gangyi.guardian.data.MonitorPrefs
 import com.gangyi.guardian.data.db.GuardianRepository
-import com.gangyi.guardian.data.db.TriggerLog
 import com.gangyi.guardian.guard.EscalationTracker
 import com.gangyi.guardian.guard.GuardSchedule
 import com.gangyi.guardian.permission.PermissionState
@@ -52,7 +54,9 @@ import com.gangyi.guardian.service.MonitorService
 import com.gangyi.guardian.ui.components.AllGrantedRow
 import com.gangyi.guardian.ui.components.GuardianCard
 import com.gangyi.guardian.ui.components.GuardianChip
+import com.gangyi.guardian.ui.components.GuardianDialog
 import com.gangyi.guardian.ui.components.GuardianSwitch
+import com.gangyi.guardian.ui.components.GuardianTextField
 import com.gangyi.guardian.ui.components.IconBadge
 import com.gangyi.guardian.ui.components.PermissionRow
 import com.gangyi.guardian.ui.components.RowDivider
@@ -71,6 +75,7 @@ import com.gangyi.guardian.ui.theme.GuardianText
 import com.gangyi.guardian.ui.theme.GuardianTextDim
 import com.gangyi.guardian.ui.theme.GuardianTextFaint
 import com.gangyi.guardian.util.InstalledApps
+import com.gangyi.guardian.util.sha256
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -95,9 +100,10 @@ fun HomeScreen(
 
     val todayStart = remember { startOfToday() }
     val todayLogs by repo.observeLogsSince(todayStart).collectAsState(initial = emptyList())
-    val todayCount = todayLogs.size
-    val decided = todayLogs.count { it.decision != null }
-    val blocked = todayLogs.count { TriggerLog.isBlocked(it.decision) }
+    // 统计口径：按"冲动事件"算，不是按弹窗次数（一次挣扎可能弹好几次）
+    val episodes = remember(todayLogs) { Episodes.group(todayLogs) }
+    val decidedEpisodes = episodes.count { it.decided }
+    val blockedEpisodes = episodes.count { it.blocked }
 
     var streak by remember { mutableIntStateOf(0) }
     LaunchedEffect(todayLogs.size) {
@@ -118,6 +124,12 @@ fun HomeScreen(
     val paused = pausedUntil > nowTick
     val inSchedule = GuardSchedule.isInSchedule(prefs, nowTick)
     var showPause by remember { mutableStateOf(false) }
+
+    // 关闭守护的摩擦：设过密码就输密码，没设就等 3 秒
+    var showCloseGuard by remember { mutableStateOf(false) }
+    var closeWait by remember { mutableIntStateOf(CLOSE_WAIT_SEC) }
+    var closePwd by remember { mutableStateOf("") }
+    var closePwdError by remember { mutableStateOf(false) }
 
     val hasRules = monitored.isNotEmpty() || keywords.isNotEmpty()
     val canStart = perms.requiredGranted && hasRules
@@ -141,31 +153,33 @@ fun HomeScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(20.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                guarding -> GuardianSuccess
-                                serviceRunning -> GuardianAccent
-                                else -> GuardianTextFaint
-                            }
-                        )
-                )
-                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        when {
-                            serviceRunning && paused -> "暂停中"
-                            serviceRunning && !inSchedule -> "时段外"
-                            serviceRunning -> "守护中"
-                            !perms.usage || !perms.overlay -> "还没准备好"
-                            !hasRules -> "还没有规则"
-                            else -> "已暂停"
-                        },
-                        fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GuardianText
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        guarding -> GuardianSuccess
+                                        serviceRunning -> GuardianAccent
+                                        else -> GuardianTextFaint
+                                    }
+                                )
+                        )
+                        Spacer(Modifier.width(9.dp))
+                        Text(
+                            when {
+                                serviceRunning && paused -> "暂停中"
+                                serviceRunning && !inSchedule -> "时段外"
+                                serviceRunning -> "守护中"
+                                !perms.usage || !perms.overlay -> "还没准备好"
+                                !hasRules -> "还没有规则"
+                                else -> "已暂停"
+                            },
+                            fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GuardianText
+                        )
+                    }
                     Spacer(Modifier.height(2.dp))
                     Text(
                         when {
@@ -199,9 +213,17 @@ fun HomeScreen(
                             Toast.makeText(context, "封锁期间无法关闭守护，等封锁结束再说", Toast.LENGTH_SHORT).show()
                             return@GuardianSwitch
                         }
-                        serviceRunning = on
-                        prefs.serviceEnabled = on
-                        if (on) MonitorService.start(context) else MonitorService.stop(context)
+                        if (!on) {
+                            // 关守护是"绕过整个 app"最短的那条路，必须有点摩擦
+                            closeWait = CLOSE_WAIT_SEC
+                            closePwd = ""
+                            closePwdError = false
+                            showCloseGuard = true
+                            return@GuardianSwitch
+                        }
+                        serviceRunning = true
+                        prefs.serviceEnabled = true
+                        MonitorService.start(context)
                     }
                 )
             }
@@ -248,13 +270,13 @@ fun HomeScreen(
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("今日停顿", "$todayCount", Modifier.weight(1f), unit = "次")
+                StatTile("今日冲动", "${episodes.size}", Modifier.weight(1f), unit = "次")
                 StatTile(
-                    "今日拦下",
-                    if (decided == 0) "—" else "${(blocked * 100 / decided)}",
+                    "拦下率",
+                    if (decidedEpisodes == 0) "—" else "${blockedEpisodes * 100 / decidedEpisodes}",
                     Modifier.weight(1f),
-                    unit = if (decided == 0) null else "%",
-                    accent = if (decided > 0 && blocked * 2 >= decided) GuardianSuccess else GuardianText
+                    unit = if (decidedEpisodes == 0) null else "%",
+                    accent = if (decidedEpisodes > 0 && blockedEpisodes * 2 >= decidedEpisodes) GuardianSuccess else GuardianText
                 )
                 StatTile("连续清醒", "$streak", Modifier.weight(1f), unit = "天", accent = GuardianAccent)
             }
@@ -285,7 +307,7 @@ fun HomeScreen(
         // ---- 权限
         SectionLabel("权限")
         GuardianCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-            if (perms.usage && perms.overlay && perms.accessibility) {
+            if (perms.allGranted) {
                 AllGrantedRow("权限已就绪，守卫可以完整工作")
             } else {
                 PermissionRow(
@@ -300,7 +322,13 @@ fun HomeScreen(
                 RowDivider(66.dp)
                 PermissionRow(
                     Icons.Rounded.Accessibility, "无障碍",
-                    "识别你输入的关键词；封锁时送你回桌面", perms.accessibility, onRequestAccessibility
+                    when {
+                        perms.accessibility && !perms.accessibilityRunning ->
+                            "系统里开着，但服务没在运行（更新或系统回收会这样）。点这里去关掉再打开一次"
+                        else -> "识别你输入的关键词；封锁时送你回桌面"
+                    },
+                    perms.accessibilityUsable,
+                    onRequestAccessibility
                 )
             }
         }
@@ -380,7 +408,61 @@ fun HomeScreen(
             }
         )
     }
+
+    // 关闭守护：设过密码就输密码，没设就等 3 秒。它是绕过整个 app 最短的那条路。
+    if (showCloseGuard) {
+        LaunchedEffect(Unit) {
+            closeWait = CLOSE_WAIT_SEC
+            while (closeWait > 0) {
+                delay(1000L)
+                closeWait--
+            }
+        }
+        val needsPwd = prefs.keywordPasswordHash.isNotEmpty()
+        GuardianDialog(
+            onDismiss = { showCloseGuard = false },
+            title = "关闭守护",
+            confirmText = if (closeWait > 0) "等待 $closeWait 秒" else "确认关闭",
+            confirmEnabled = closeWait == 0,
+            danger = true,
+            onConfirm = {
+                if (needsPwd && sha256(closePwd.trim()) != prefs.keywordPasswordHash) {
+                    closePwdError = true
+                } else {
+                    showCloseGuard = false
+                    serviceRunning = false
+                    prefs.serviceEnabled = false
+                    MonitorService.stop(context)
+                }
+            }
+        ) {
+            Column {
+                Text(
+                    "关闭后不再有任何提醒，已经设的规则都不生效。只是临时想放开的话，用「暂停一会」更合适。",
+                    fontSize = 13.sp, color = GuardianTextDim, lineHeight = 19.sp
+                )
+                if (needsPwd) {
+                    Spacer(Modifier.height(12.dp))
+                    GuardianTextField(
+                        value = closePwd,
+                        onValueChange = { closePwd = it; closePwdError = false },
+                        placeholder = "输入关键词密码",
+                        isError = closePwdError,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardType = KeyboardType.NumberPassword
+                    )
+                    if (closePwdError) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("密码不对", fontSize = 12.sp, color = GuardianDanger)
+                    }
+                }
+            }
+        }
+    }
 }
+
+/** 关闭守护的等待秒数（没设密码时的门槛） */
+private const val CLOSE_WAIT_SEC = 3
 
 /** 时间戳 → HH:mm */
 internal fun formatHm(ms: Long): String {

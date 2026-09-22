@@ -63,8 +63,17 @@ class GuardianRepository(context: Context) {
     suspend fun logTrigger(
         packageName: String?,
         triggerType: String,
-        keyword: String? = null
-    ): Long = logDao.insert(TriggerLog(packageName = packageName, triggerType = triggerType, keyword = keyword))
+        keyword: String? = null,
+        decision: String? = null
+    ): Long = logDao.insert(
+        TriggerLog(
+            packageName = packageName,
+            triggerType = triggerType,
+            keyword = keyword,
+            decision = decision,
+            dismissedAt = if (decision != null) System.currentTimeMillis() else null
+        )
+    )
 
     suspend fun markDecision(id: Long, decision: String) {
         logDao.setDecision(id, decision, System.currentTimeMillis())

@@ -96,17 +96,23 @@ class OverlayController private constructor(context: Context) {
         appLabel: String,
         remainingMs: Long,
         kicked: Boolean,
-        onHome: () -> Unit
+        needsPassword: Boolean,
+        onEmergencyUnlock: (String) -> Boolean,
+        onHome: () -> Unit,
+        /** false = 只是把"墙"换成告知卡这类重绘，别再振一次/响一次 */
+        feedback: Boolean = true
     ): Boolean {
         // 人已经被送回桌面了，之前挂着的"墙"没意义了，换成告知卡
         if (kicked && isShowing && currentSource == SOURCE_LOCKDOWN && boundPkg != null) {
             dismissCurrent()
         }
-        val ok = attach(SOURCE_LOCKDOWN, bound = if (kicked) null else pkg) {
+        val ok = attach(SOURCE_LOCKDOWN, bound = if (kicked) null else pkg, feedback = feedback) {
             LockdownContent(
                 appLabel = appLabel,
                 remainingMs = remainingMs,
                 kicked = kicked,
+                needsPassword = needsPassword,
+                onEmergencyUnlock = onEmergencyUnlock,
                 onDismiss = { dismissCurrent() },
                 onHome = onHome
             )
@@ -121,7 +127,7 @@ class OverlayController private constructor(context: Context) {
     }
 
     /** 挂窗的公共流程。已有弹窗时按优先级决定抢占还是放弃。 */
-    private fun attach(source: String, bound: String?, content: @Composable () -> Unit): Boolean {
+    private fun attach(source: String, bound: String?, feedback: Boolean = true, content: @Composable () -> Unit): Boolean {
         if (isShowing) {
             // 只有封锁窗能抢占普通提醒；封锁窗之间不互抢（防节流期内反复重建导致闪烁）
             val canPreempt = source == SOURCE_LOCKDOWN && currentSource != SOURCE_LOCKDOWN
@@ -157,10 +163,12 @@ class OverlayController private constructor(context: Context) {
             boundPkg = bound
             generation++
             // 窗真挂上去了才给反馈——加窗失败时不该白响一声
-            if (source == SOURCE_LOCKDOWN) {
-                AlertFeedback.onLockdown(appContext)
-            } else {
-                AlertFeedback.onRemind(appContext)
+            if (feedback) {
+                if (source == SOURCE_LOCKDOWN) {
+                    AlertFeedback.onLockdown(appContext)
+                } else {
+                    AlertFeedback.onRemind(appContext)
+                }
             }
             true
         } catch (_: Exception) {

@@ -159,22 +159,32 @@ object Permissions {
     }
 }
 
-/** 一次性读出的权限快照，Activity 层在 ON_RESUME 刷新，各页面共用。 */
+/**
+ * 一次性读出的权限快照，Activity 层在 ON_RESUME 刷新，各页面共用。
+ *
+ * [accessibilityRunning] 是"系统设置里开着"之外的第二个信号：无障碍服务真的绑上了。
+ * 两者会不一致——用户更新 APK、系统回收、`force-stop` 都会让设置里还写着"已开启"，
+ * 服务却早没了（小米 HyperOS 尤其常见）。这时候关键词监控和"踢回桌面"都是哑的，
+ * 但 UI 只读设置就会显示绿勾，用户完全不知道。所以两个都读。
+ */
 data class PermissionState(
     val usage: Boolean,
     val overlay: Boolean,
     val accessibility: Boolean,
-    val battery: Boolean
+    val battery: Boolean,
+    val accessibilityRunning: Boolean = false
 ) {
     val requiredGranted: Boolean get() = usage && overlay
-    val allGranted: Boolean get() = usage && overlay && accessibility && battery
+    val accessibilityUsable: Boolean get() = accessibility && accessibilityRunning
+    val allGranted: Boolean get() = usage && overlay && accessibilityUsable && battery
 
     companion object {
         fun read(context: Context): PermissionState = PermissionState(
             usage = Permissions.hasUsageAccess(context),
             overlay = Permissions.hasOverlay(context),
             accessibility = Permissions.hasAccessibility(context),
-            battery = Permissions.isIgnoringBatteryOptimizations(context)
+            battery = Permissions.isIgnoringBatteryOptimizations(context),
+            accessibilityRunning = runCatching { ClipboardWatcherService.isConnected() }.getOrDefault(false)
         )
     }
 }

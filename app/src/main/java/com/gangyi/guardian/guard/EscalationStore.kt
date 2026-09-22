@@ -104,6 +104,12 @@ class EscalationStore(context: Context) {
         persist()
     }
 
+    /** 提前解除某个包的封锁（紧急出口用）。strike 记忆保留，下次再封照样加重。 */
+    @Synchronized
+    fun clearLock(pkg: String) {
+        if (locks.remove(pkg) != null) persist()
+    }
+
     /** 清掉所有已到期的封锁 / 通行证，返回是否有变化。 */
     @Synchronized
     fun pruneExpired(now: Long): Boolean {
