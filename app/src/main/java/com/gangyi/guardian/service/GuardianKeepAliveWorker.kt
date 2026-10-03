@@ -1,6 +1,5 @@
 package com.gangyi.guardian.service
 
-import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import android.util.Log
 import androidx.work.Constraints
@@ -39,7 +38,7 @@ class GuardianKeepAliveWorker(
             MonitorService.start(applicationContext)
             Log.d(TAG, "keep-alive: service (re)started")
             Result.success()
-        } catch (e: ForegroundServiceStartNotAllowedException) {
+        } catch (e: IllegalStateException) {
             Log.w(TAG, "FGS not allowed from background, deferring to next resume")
             Result.success()
         } catch (e: Exception) {
