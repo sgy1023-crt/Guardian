@@ -26,18 +26,6 @@
 - **权限守护**：运行中权限被系统收回会发通知，不会静默失效
 - **本地运行**：不联网不上传，所有数据只在本地；导出 JSON 随你处置
 
-## 截图
-
-> v1.2 界面已全面重做，截图待更新。
-
-| 停顿弹窗 · 触发实拍 | 提醒语 · 随机模式 | 提醒语 · 指定模式 |
-|:---:|:---:|:---:|
-| <img src="screenshots/overlay-popup.jpg" width="260"/> | <img src="screenshots/reminders-random.jpg" width="260"/> | <img src="screenshots/reminders-fixed.jpg" width="260"/> |
-
-| 关键词 · 加密遮罩 | 删除需验证密码 | 设置 |
-|:---:|:---:|:---:|
-| <img src="screenshots/keywords-encrypted.jpg" width="260"/> | <img src="screenshots/keyword-delete-password.jpg" width="260"/> | <img src="screenshots/settings.jpg" width="260"/> |
-
 ## 下载安装
 
 ### 方式一：直接下载 APK
