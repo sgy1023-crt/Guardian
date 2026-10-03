@@ -208,7 +208,8 @@ object EscalationTracker {
         // 上次被封还在记忆期内 → 累加 strike，时长翻倍（3→6→12 分钟，上限 4 倍）
         val prevStrike = store.strikeCount(pkg)
         val prevAt = store.lastLockTime(pkg)
-        val strike = if (now - prevAt <= STRIKE_MEMORY_MS) prevStrike + 1 else 1
+        // strike 只需 1/2/3 三档，先封顶再移位，避免第 32 次时溢出。
+        val strike = if (now - prevAt <= STRIKE_MEMORY_MS) prevStrike.coerceIn(0, 2) + 1 else 1
         val multiplier = (1 shl (strike - 1)).coerceAtMost(MAX_MULTIPLIER)
         val durationMs = baseMs * multiplier
 

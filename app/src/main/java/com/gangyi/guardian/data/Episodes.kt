@@ -82,7 +82,7 @@ object Episodes {
         episodes.forEach { e ->
             val idx = ((e.startMs - rangeStart) / dayMs).toInt()
             if (idx in 0 until days) {
-                if (e.continued) continued[idx]++ else blocked[idx]++
+                if (e.continued) continued[idx]++ else if (e.blocked) blocked[idx]++
             }
         }
         return (0 until days).map { DayEpisodes(blocked[it], continued[it]) }

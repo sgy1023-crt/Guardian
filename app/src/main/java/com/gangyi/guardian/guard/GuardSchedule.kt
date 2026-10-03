@@ -57,7 +57,10 @@ object GuardSchedule {
         }
         for (i in 0..7) {
             if (cal.get(Calendar.DAY_OF_WEEK) in days) {
-                val startMs = cal.timeInMillis + prefs.scheduleStartMinutes * 60_000L
+                val startMs = (cal.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, prefs.scheduleStartMinutes / 60)
+                    set(Calendar.MINUTE, prefs.scheduleStartMinutes % 60)
+                }.timeInMillis
                 if (startMs > now) return startMs
             }
             cal.add(Calendar.DAY_OF_MONTH, 1)
@@ -111,11 +114,14 @@ object GuardSchedule {
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
-        val dayDiff = ((startMs - today.timeInMillis) / (24 * 60 * 60_000L)).toInt()
+        val targetDate = target.get(Calendar.YEAR) to target.get(Calendar.DAY_OF_YEAR)
+        val todayDate = today.get(Calendar.YEAR) to today.get(Calendar.DAY_OF_YEAR)
+        today.add(Calendar.DAY_OF_MONTH, 1)
+        val tomorrowDate = today.get(Calendar.YEAR) to today.get(Calendar.DAY_OF_YEAR)
         val hm = formatHm(target.get(Calendar.HOUR_OF_DAY) * 60 + target.get(Calendar.MINUTE))
-        return when (dayDiff) {
-            0 -> "今天 $hm"
-            1 -> "明天 $hm"
+        return when (targetDate) {
+            todayDate -> "今天 $hm"
+            tomorrowDate -> "明天 $hm"
             else -> "周${DAY_SHORT.getValue(target.get(Calendar.DAY_OF_WEEK))} $hm"
         }
     }

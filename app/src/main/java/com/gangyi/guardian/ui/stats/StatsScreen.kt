@@ -112,11 +112,11 @@ fun StatsScreen() {
         }
     }
 
-    val topApps = remember(logs) {
-        logs.filter { it.packageName != null }
+    val topApps = remember(episodes) {
+        episodes.filter { it.packageName != null }
             .groupBy { it.packageName!! }
             .map { (pkg, list) ->
-                Triple(pkg, list.size, list.count { TriggerLog.isBlocked(it.decision) })
+                Triple(pkg, list.size, list.count { it.blocked })
             }
             .sortedByDescending { it.second }
             .take(5)
