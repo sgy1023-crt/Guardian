@@ -37,9 +37,9 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_OVERLAY_COUNTDOWN, 5)
         set(value) = sp.edit().putInt(KEY_OVERLAY_COUNTDOWN, value).apply()
 
-    /** 点"继续"后的放行分钟数，默认 5 分钟 */
+    /** 点"继续"后的放行分钟数，默认 2 分钟。放行越短，升级链推进得越快 */
     var passMinutes: Int
-        get() = sp.getInt(KEY_PASS_MINUTES, 5)
+        get() = sp.getInt(KEY_PASS_MINUTES, 2)
         set(value) = sp.edit().putInt(KEY_PASS_MINUTES, value).apply()
 
     /** 递增停顿总开关：窗口内每多"继续"一次，下次停顿按倍数加长 */
@@ -102,9 +102,9 @@ class MonitorPrefs(context: Context) {
         get() = sp.getBoolean(KEY_ESC_ENABLED, true)
         set(value) = sp.edit().putBoolean(KEY_ESC_ENABLED, value).apply()
 
-    /** 窗口内第几次"继续"触发封锁，默认第 3 次（前两次各给一段通行） */
+    /** 窗口内第几次"继续"触发封锁，默认第 4 次（前三次各给一段通行） */
     var escalationThreshold: Int
-        get() = sp.getInt(KEY_ESC_THRESHOLD, 3)
+        get() = sp.getInt(KEY_ESC_THRESHOLD, 4)
         set(value) = sp.edit().putInt(KEY_ESC_THRESHOLD, value).apply()
 
     /** 计数的滑动窗口分钟数，默认 30 分钟。超窗的旧记录自动丢弃 */
@@ -112,9 +112,9 @@ class MonitorPrefs(context: Context) {
         get() = sp.getInt(KEY_ESC_WINDOW, 30)
         set(value) = sp.edit().putInt(KEY_ESC_WINDOW, value).apply()
 
-    /** 封锁基础时长分钟数，默认 3 分钟。短时间内重复被封同一 App 会翻倍 */
+    /** 封锁基础时长分钟数，默认 10 分钟。短时间内重复被封同一 App 会翻倍（最多 4 倍） */
     var lockdownMinutes: Int
-        get() = sp.getInt(KEY_LOCKDOWN_MINUTES, 3)
+        get() = sp.getInt(KEY_LOCKDOWN_MINUTES, 10)
         set(value) = sp.edit().putInt(KEY_LOCKDOWN_MINUTES, value).apply()
 
     /** 暂停守护到这个时间戳（毫秒）；0 或已过期 = 没暂停。暂停期间不弹不记，已生效的封锁照常 */
@@ -162,6 +162,22 @@ class MonitorPrefs(context: Context) {
         lockdownMinutes = v.lockMinutes
     }
 
+    /**
+     * 一次性迁移：老版本的「标准」是 放行 5 分钟 / 第 3 次继续 / 封 3 分钟。
+     * 收紧之后，如果用户从没自己调过参数（存的正好是老标准那一套），直接升成新标准——
+     * 否则他升级完会发现"跟没改一样"。自己调过参数的人（自定义）不动。
+     */
+    fun migrateLegacyStandardOnce() {
+        if (sp.getBoolean(KEY_LEGACY_MIGRATED, false)) return
+        sp.edit().putBoolean(KEY_LEGACY_MIGRATED, true).apply()
+        val looksLikeLegacyStandard = overlayCountdownSeconds == 5 &&
+            escalatingCountdownEnabled && countdownMaxSeconds == 60 &&
+            passMinutes == 5 && escalationEnabled &&
+            escalationThreshold == 3 && escalationWindowMinutes == 30 &&
+            lockdownMinutes == 3 && countdownMultiplier == 2.0f
+        if (looksLikeLegacyStandard) applyPreset(Preset.STANDARD)
+    }
+
     companion object {
         /** Calendar.SUNDAY(1) … Calendar.SATURDAY(7) */
         val ALL_DAYS: Set<Int> = (1..7).toSet()
@@ -191,6 +207,7 @@ class MonitorPrefs(context: Context) {
         private const val KEY_SCHEDULE_START = "schedule_start_minutes"
         private const val KEY_SCHEDULE_END = "schedule_end_minutes"
         private const val KEY_SCHEDULE_DAYS = "schedule_days"
+        private const val KEY_LEGACY_MIGRATED = "legacy_standard_migrated"
     }
 }
 
@@ -210,13 +227,13 @@ enum class Preset(
     ),
     STANDARD(
         "标准",
-        "停顿 5 秒起、越继续等越久；30 分钟内第 3 次继续封锁 3 分钟",
-        PresetValues(countdown = 5, escalating = true, countdownMax = 60, pass = 5, lockEnabled = true, threshold = 3, lockMinutes = 3)
+        "停顿 5 秒起、越继续等越久；30 分钟内第 4 次继续封锁 10 分钟",
+        PresetValues(countdown = 5, escalating = true, countdownMax = 60, pass = 2, lockEnabled = true, threshold = 4, lockMinutes = 10)
     ),
     STRICT(
         "严格",
-        "停顿 10 秒起；每次只放行 3 分钟；第 2 次继续就封锁 10 分钟",
-        PresetValues(countdown = 10, escalating = true, countdownMax = 120, pass = 3, lockEnabled = true, threshold = 2, lockMinutes = 10)
+        "停顿 10 秒起、每次只放行 2 分钟；30 分钟内第 3 次继续封锁 15 分钟",
+        PresetValues(countdown = 10, escalating = true, countdownMax = 120, pass = 2, lockEnabled = true, threshold = 3, lockMinutes = 15)
     ),
     CUSTOM("自定义", "你在高级设置里改过参数", null);
 

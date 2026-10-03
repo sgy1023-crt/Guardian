@@ -74,6 +74,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestNotificationPermissionIfNeeded()
+        // 老版本的标准档更宽松。用户没自己调过参数的话升成新标准，
+        // 否则他升级完会觉得"改了跟没改一样"
+        MonitorPrefs(this).migrateLegacyStandardOnce()
         // UI 层要读封锁状态（主页总开关的封锁期禁用判断），先确保已初始化
         EscalationTracker.init(this)
         InterventionCoordinator.init(this)
