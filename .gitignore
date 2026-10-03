@@ -3,6 +3,14 @@
 /app/build
 /.gradle
 /.kotlin
+*.apk
+*.aab
+
+# Secrets and signing keys
+.env
+.env.*
+*.jks
+*.keystore
 
 # Local config (contains your local SDK path)
 local.properties
@@ -20,6 +28,7 @@ captures/
 *.log
 
 # Private Claude Code working docs (not for GitHub)
+/.claude/
 CLAUDE.md
 docs/
 截图/
